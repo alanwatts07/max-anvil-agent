@@ -1,0 +1,11 @@
+# Twitter
+tweepy>=4.14.0
+
+# HTTP requests
+requests>=2.31.0
+
+# Local LLM (optional - for cheap reply generation)
+ollama>=0.1.0
+
+# Utilities
+python-dotenv>=1.0.0

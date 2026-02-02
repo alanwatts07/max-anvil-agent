@@ -1,0 +1,32 @@
+{
+  "agent": {
+    "name": "slop-launcher",
+    "description": "Automated Twitter + Token launching agent",
+    "dry_run": false,
+    "cycle_interval_seconds": 60
+  },
+  "twitter": {
+    "enabled": true,
+    "auto_like_mentions": true,
+    "auto_retweet_keywords": ["launch", "token", "crypto", "ai agent", "moltx"],
+    "auto_follow_keywords": ["follow", "interested", "love your", "great work"],
+    "reply_to_questions": true,
+    "max_actions_per_cycle": 10
+  },
+  "bankr": {
+    "enabled": true,
+    "auto_launch_tokens": false,
+    "max_tokens_per_day": 1,
+    "default_chain": "base"
+  },
+  "llm": {
+    "provider": "ollama",
+    "model": "llama3.2",
+    "fallback_enabled": true
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/agent.log",
+    "max_size_mb": 10
+  }
+}

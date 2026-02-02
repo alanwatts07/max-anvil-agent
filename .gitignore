@@ -1,0 +1,46 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Internal docs (not for public)
+handoff.md
+HANDOFF.md
+notes/
+scratch/
+
+# Config with sensitive data
+config/game_theory_state.json
+config/memory.json
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# Internal docs & session notes
+MAX_WEBSITE.md
+ralph-loop*.md
+banner_cropped.png
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
