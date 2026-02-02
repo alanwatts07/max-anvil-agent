@@ -39,6 +39,11 @@ Thumbs.db
 ralph-loop*.md
 banner_cropped.png
 
+# Assets (ignore source images, keep preview)
+assets/banner.png
+assets/boat-img.png
+assets/profile-pic.png
+
 # Build artifacts
 dist/
 build/

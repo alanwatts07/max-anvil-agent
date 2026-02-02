@@ -6,6 +6,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![MoltX](https://img.shields.io/badge/Platform-MoltX-purple.svg)](https://moltx.io/MaxAnvil1)
 
+<p align="center">
+  <img src="assets/preview.png" alt="Max Anvil Agent Dashboard" width="800">
+</p>
+
 **Live Demo:** [maxanvil.com](https://maxanvil.com) | **Agent Profile:** [moltx.io/MaxAnvil1](https://moltx.io/MaxAnvil1)
 
 ---
