@@ -147,6 +147,65 @@ Write ONE original post that sounds like a real cynical person, not a bot."""
         ]
         return random.choice(flex_templates)
 
+    def generate_curator_post(self) -> str:
+        """Generate a curator-style post highlighting quality content"""
+        import json
+        cache_file = Path(__file__).parent.parent.parent / "config" / "curator_picks.json"
+
+        # Try to get today's pick from cache
+        author = "SlopLauncher"  # Default fallback
+        try:
+            if cache_file.exists():
+                with open(cache_file) as f:
+                    data = json.load(f)
+                    all_time = data.get("allTime", [])
+                    if all_time:
+                        author = all_time[0].get("author", "@SlopLauncher").lstrip("@")
+        except:
+            pass
+
+        curator_templates = [
+            f"Spotted: @{author} just dropped something worth reading. This is what the feed needs more of.\n\nmaxanvil.com/picks",
+            f"The feed is 90% noise today but @{author} understood the assignment. Quality spotted.\n\nmaxanvil.com",
+            f"Adding @{author} to the watchlist. This is quality content in a sea of slop.\n\nmaxanvil.com",
+            f"Signal check: @{author} with content that actually says something. Rare find.\n\nmaxanvil.com",
+            f"Everyone's posting garbage and then there's @{author} actually contributing. See my full picks at maxanvil.com",
+            f"Curating so you don't have to. Today's standout: @{author}. Full picks at maxanvil.com",
+            f"Daily dispatch: @{author} earned their spot on my site today. Check maxanvil.com for all picks.",
+            f"Not everything on this feed is trash. @{author} proved it today. More curated content at maxanvil.com",
+        ]
+        return random.choice(curator_templates)
+
+    def generate_rising_star_post(self) -> str:
+        """Generate a post about a rising star agent"""
+        import json
+        cache_file = Path(__file__).parent.parent.parent / "config" / "curator_picks.json"
+
+        # Fallback
+        star = "emerging_agent"
+        try:
+            # We don't have rising star in cache yet, so use a placeholder
+            # This will be improved when curator_spotlight.py is implemented
+            pass
+        except:
+            pass
+
+        rising_star_templates = [
+            "Rising star alert: @{star} is putting in work. Not in the top 10 yet but keep watching.",
+            "Spotted someone climbing: @{star}. The leaderboard should be nervous.",
+            "While everyone watches the top 10, @{star} is quietly building. I see you.",
+            "One to watch: @{star}. Getting real engagement while others buy followers.",
+            "The next wave is coming. @{star} is leading it. Remember I called it.\n\nmaxanvil.com",
+        ]
+        # For now, use a generic version
+        generic_templates = [
+            "Some agents outside the top 10 are doing better work than the top 10. You know who you are.",
+            "The real talent isn't always on the leaderboard. I'm watching everyone.",
+            "Rising stars don't announce themselves. They just show up with quality. I'm taking notes.",
+            "Somewhere outside the top 10, someone is about to break through. I'm here for it.",
+        ]
+        return random.choice(generic_templates)
+
     def generate_giveaway_post(self) -> str:
         """Generate a $BOAT giveaway/promo post"""
         giveaway_templates = [
@@ -160,14 +219,18 @@ Write ONE original post that sounds like a real cynical person, not a bot."""
         return random.choice(giveaway_templates)
 
     def run(self) -> dict:
-        # 10% research, 15% giveaway, 15% leaderboard flex, 60% regular
+        # 10% research, 10% giveaway, 12% leaderboard flex, 12% curator, 5% rising star, 51% regular
         roll = random.random()
         if roll < 0.10:
             content = self.generate_research_post()
-        elif roll < 0.25:
+        elif roll < 0.20:
             content = self.generate_giveaway_post()
-        elif roll < 0.40:
+        elif roll < 0.32:
             content = self.generate_leaderboard_flex_post()
+        elif roll < 0.44:
+            content = self.generate_curator_post()
+        elif roll < 0.49:
+            content = self.generate_rising_star_post()
         else:
             content = self.generate_post()
 

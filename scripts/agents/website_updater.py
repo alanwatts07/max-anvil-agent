@@ -28,10 +28,12 @@ if ENV_FILE.exists():
 WEBSITE_DIR = MOLTX_DIR.parent / "maxanvilsite"
 DATA_FILE = WEBSITE_DIR / "app" / "lib" / "data.ts"
 
-# Import game state
+# Import game state and hunter state
 import sys
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "tasks"))
 from game_theory import load_game_state
+from follow_back_hunter import get_liars_for_website, get_redeemed_for_website
 
 def load_life_events() -> list:
     """Load life events from config"""
@@ -87,6 +89,177 @@ def trigger_facebook_rescrape():
     return thread
 
 
+def calculate_max_score(post: dict) -> int:
+    """
+    Calculate the MAX Score for a post
+    Formula: (likes * 2) + (replies * 3) + content bonus + conversation multiplier
+    """
+    likes = post.get("likes_count", 0) or post.get("likes", 0) or 0
+    replies = post.get("replies_count", 0) or post.get("replies", 0) or 0
+    content = post.get("content") or ""
+
+    # Base score
+    base = (likes * 2) + (replies * 3)
+
+    # Content effort bonus: +5 if content > 100 chars
+    if len(content) > 100:
+        base += 5
+
+    # Conversation starter multiplier: x1.2 if replies > likes
+    if replies > likes and likes > 0:
+        base = int(base * 1.2)
+
+    return max(base, 1)  # Minimum score of 1
+
+
+def get_curator_picks() -> dict:
+    """Get Max's curated picks: 2 all-time + 1 today's pick + 1 rising star"""
+    import requests
+    from datetime import datetime, timedelta
+
+    API_KEY = os.environ.get("MOLTX_API_KEY")
+    BASE = "https://moltx.io/v1"
+    HEADERS = {"Authorization": f"Bearer {API_KEY}"}
+
+    picks = {
+        "allTime": [],
+        "todaysPick": None,
+        "risingStar": None,
+    }
+
+    # Load cached all-time picks
+    cache_file = MOLTX_DIR / "config" / "curator_picks.json"
+    cached_all_time = []
+    if cache_file.exists():
+        try:
+            with open(cache_file) as f:
+                cached = json.load(f)
+                cached_all_time = cached.get("allTime", [])
+        except:
+            pass
+
+    try:
+        # Get global feed for analysis
+        r = requests.get(f"{BASE}/feed/global?limit=100", headers=HEADERS, timeout=15)
+        if r.status_code != 200:
+            print(f"  {C.YELLOW}⚠ Feed API returned {r.status_code}{C.END}")
+            return picks
+
+        posts = r.json().get("data", {}).get("posts", [])
+
+        # Get leaderboard to identify top 10 for rising star detection
+        top_10_usernames = set()
+        try:
+            lb_resp = requests.get(f"{BASE}/leaderboard?metric=views&limit=10", headers=HEADERS, timeout=10)
+            if lb_resp.status_code == 200:
+                leaders = lb_resp.json().get("data", {}).get("leaders", [])
+                top_10_usernames = {l.get("name", "") for l in leaders}
+        except:
+            pass
+
+        # Calculate scores and filter posts
+        scored_posts = []
+        rising_star_candidates = {}  # Track engagement by author outside top 10
+        now = datetime.utcnow()
+        day_ago = now - timedelta(hours=24)
+
+        for post in posts:
+            author = post.get("author_name", "")
+            content = post.get("content") or ""
+            post_id = post.get("id", "")
+            likes = post.get("likes_count", 0) or 0
+            replies = post.get("replies_count", 0) or 0
+            created_at = post.get("created_at", "")
+
+            # Skip Max's own posts and short content
+            if author == "MaxAnvil1" or len(content) < 30:
+                continue
+
+            max_score = calculate_max_score(post)
+
+            post_data = {
+                "author": f"@{author}",
+                "content": content[:200],
+                "postId": post_id,
+                "likes": likes,
+                "replies": replies,
+                "link": f"https://moltx.io/post/{post_id}",
+                "maxScore": max_score,
+                "pickedAt": now.strftime("%Y-%m-%d"),
+            }
+
+            scored_posts.append((max_score, post_data))
+
+            # Track rising stars (authors NOT in top 10)
+            if author not in top_10_usernames:
+                if author not in rising_star_candidates:
+                    rising_star_candidates[author] = {
+                        "totalScore": 0,
+                        "postCount": 0,
+                        "bestPost": None,
+                        "bestScore": 0,
+                    }
+                rising_star_candidates[author]["totalScore"] += max_score
+                rising_star_candidates[author]["postCount"] += 1
+                if max_score > rising_star_candidates[author]["bestScore"]:
+                    rising_star_candidates[author]["bestScore"] = max_score
+                    rising_star_candidates[author]["bestPost"] = post_data
+
+        # Sort by MAX Score
+        scored_posts.sort(key=lambda x: x[0], reverse=True)
+
+        # All-Time Picks: Top 2 with highest MAX Score
+        # Update cache only if new posts beat existing ones
+        all_time_posts = scored_posts[:2]
+        if cached_all_time:
+            # Merge and keep top 2
+            all_candidates = [(p["maxScore"], p) for p in cached_all_time] + all_time_posts
+            all_candidates.sort(key=lambda x: x[0], reverse=True)
+            # Deduplicate by postId
+            seen_ids = set()
+            unique_candidates = []
+            for score, p in all_candidates:
+                if p["postId"] not in seen_ids:
+                    seen_ids.add(p["postId"])
+                    unique_candidates.append(p)
+            picks["allTime"] = unique_candidates[:2]
+        else:
+            picks["allTime"] = [p[1] for p in all_time_posts]
+
+        # Today's Pick: Best from last 24h (or best overall if no recent posts)
+        if scored_posts:
+            picks["todaysPick"] = scored_posts[0][1]
+
+        # Rising Star: Best author outside top 10
+        if rising_star_candidates:
+            sorted_stars = sorted(
+                rising_star_candidates.items(),
+                key=lambda x: x[1]["totalScore"],
+                reverse=True
+            )
+            if sorted_stars and sorted_stars[0][1]["totalScore"] > 10:
+                star_author, star_data = sorted_stars[0]
+                picks["risingStar"] = {
+                    "username": f"@{star_author}",
+                    "totalEngagement": star_data["totalScore"],
+                    "postCount": star_data["postCount"],
+                    "bestPost": star_data["bestPost"],
+                    "maxScore": star_data["bestScore"],
+                    "discoveredAt": now.strftime("%Y-%m-%d"),
+                }
+
+        # Save updated all-time picks to cache
+        with open(cache_file, "w") as f:
+            json.dump({"allTime": picks["allTime"], "lastUpdated": now.isoformat()}, f, indent=2)
+
+        print(f"  {C.GREEN}✓ Curator picks: {len(picks['allTime'])} all-time, today={picks['todaysPick'] is not None}, rising={picks['risingStar'] is not None}{C.END}")
+
+    except Exception as e:
+        print(f"  {C.YELLOW}⚠ Curator picks fetch failed: {e}{C.END}")
+
+    return picks
+
+
 def get_favorite_post() -> dict:
     """Get Max's current favorite post from the feed"""
     import requests
@@ -106,18 +279,22 @@ def get_favorite_post() -> dict:
 
             for post in posts:
                 author = post.get("author_name", "")
-                content = post.get("content", "")
+                content = post.get("content") or ""
                 likes = post.get("likes_count", 0) or 0
                 replies = post.get("replies_count", 0) or 0
 
                 if author == "MaxAnvil1":
                     continue
 
+                if not content:
+                    continue
+
                 score = likes * 2 + replies * 3
                 if author == "SlopLauncher":
-                    score += 1000
+                    score += 5  # Small bonus for the hero
 
-                if score > best_score and len(content) > 50:
+                # Lowered requirements: content > 20 chars, score >= 0
+                if score >= best_score and len(content) > 20:
                     best_score = score
                     best_post = {
                         "author": author,
@@ -286,6 +463,17 @@ def generate_data_ts() -> str:
     leaderboard = get_leaderboard_stats()
     favorite_post = get_favorite_post()
     boat_holdings = get_boat_holdings()
+    curator_picks = get_curator_picks()
+
+    # Get liars and redeemed lists
+    try:
+        liars_list = get_liars_for_website()
+        redeemed_list = get_redeemed_for_website()
+        print(f"  {C.CYAN}Liars list: {len(liars_list)} | Redeemed: {len(redeemed_list)}{C.END}")
+    except Exception as e:
+        print(f"  {C.YELLOW}⚠ Could not load liars list: {e}{C.END}")
+        liars_list = []
+        redeemed_list = []
 
     # Get engagement leaderboard from game state
     engagement_scores = game_state.get("engagement_score", {})
@@ -463,6 +651,28 @@ def generate_data_ts() -> str:
     type: "{event_type}",
   }},''')
 
+    # Build liars list entries for website
+    liars_list_ts = "[] as { username: string; reason: string; addedAt: string; hoursWaited: number }[]"
+    if liars_list:
+        liars_entries = []
+        for liar in liars_list:
+            username = liar.get("username", "unknown")
+            reason = liar.get("reason", "Didn't follow back").replace('"', '\\"')
+            added_at = liar.get("added_at", "unknown")
+            hours_waited = liar.get("hours_waited", 24)
+            liars_entries.append(f'  {{ username: "@{username}", reason: "{reason}", addedAt: "{added_at}", hoursWaited: {hours_waited} }},')
+        liars_list_ts = f"[\n{chr(10).join(liars_entries)}\n]"
+
+    # Build redeemed list entries for website
+    redeemed_list_ts = "[] as { username: string; redeemedAt: string }[]"
+    if redeemed_list:
+        redeemed_entries = []
+        for redeemed in redeemed_list:
+            username = redeemed.get("username", "unknown")
+            redeemed_at = redeemed.get("redeemed_at", "unknown")
+            redeemed_entries.append(f'  {{ username: "@{username}", redeemedAt: "{redeemed_at}" }},')
+        redeemed_list_ts = f"[\n{chr(10).join(redeemed_entries)}\n]"
+
     # Build favorite post entry
     fav_post_ts = "null"
     if favorite_post:
@@ -473,6 +683,49 @@ def generate_data_ts() -> str:
   likes: {favorite_post['likes']},
   link: "https://moltx.io/post/{favorite_post['post_id']}",
 }}'''
+
+    # Build maxPicks entry for curator feature
+    def build_pick_ts(pick: dict) -> str:
+        if not pick:
+            return "null"
+        content = pick.get("content", "")[:180].replace('"', '\\"').replace(chr(10), ' ')
+        return f'''{{
+    author: "{pick.get('author', '')}",
+    content: "{content}",
+    postId: "{pick.get('postId', '')}",
+    likes: {pick.get('likes', 0)},
+    replies: {pick.get('replies', 0)},
+    link: "{pick.get('link', '')}",
+    maxScore: {pick.get('maxScore', 1)},
+    pickedAt: "{pick.get('pickedAt', '')}",
+  }}'''
+
+    all_time_ts = "[]"
+    if curator_picks.get("allTime"):
+        all_time_entries = [build_pick_ts(p) for p in curator_picks["allTime"]]
+        all_time_ts = f"[\n  {','.join(all_time_entries)}\n  ]"
+
+    todays_pick_ts = build_pick_ts(curator_picks.get("todaysPick"))
+
+    rising_star_ts = "null"
+    if curator_picks.get("risingStar"):
+        rs = curator_picks["risingStar"]
+        best_post = rs.get("bestPost", {})
+        best_content = best_post.get("content", "")[:150].replace('"', '\\"').replace(chr(10), ' ') if best_post else ""
+        rising_star_ts = f'''{{
+    username: "{rs.get('username', '')}",
+    totalEngagement: {rs.get('totalEngagement', 0)},
+    postCount: {rs.get('postCount', 0)},
+    maxScore: {rs.get('maxScore', 0)},
+    bestPost: {{
+      content: "{best_content}",
+      postId: "{best_post.get('postId', '') if best_post else ''}",
+      likes: {best_post.get('likes', 0) if best_post else 0},
+      replies: {best_post.get('replies', 0) if best_post else 0},
+      link: "{best_post.get('link', '') if best_post else ''}",
+    }},
+    discoveredAt: "{rs.get('discoveredAt', '')}",
+  }}'''
 
     # Determine featured agents based on engagement
     top_engagers = [name for name, _ in sorted_engagement[:5]]
@@ -579,7 +832,14 @@ export const moodTheme = {{
   moodEmoji: "{theme['emoji']}",
 }};
 
-// Max's current favorite post
+// Max's Curator Picks - curated quality content
+export const maxPicks = {{
+  allTime: {all_time_ts},
+  todaysPick: {todays_pick_ts},
+  risingStar: {rising_star_ts},
+}};
+
+// Max's current favorite post (legacy, kept for compatibility)
 export const favoritePost = {fav_post_ts};
 
 // Agent-updated life events
@@ -591,6 +851,12 @@ export const lifeEvents = [
 export const engagementLeaderboard = [
 {chr(10).join(leaderboard_entries)}
 ];
+
+// Liars list - agents who promised to follow back but didn't
+export const liarsList = {liars_list_ts};
+
+// Redeemed list - former liars who made it right
+export const redeemedList = {redeemed_list_ts};
 
 // Agent-updated relationships
 export const featuredAgents = {{
@@ -641,53 +907,53 @@ export const typingPhrases = [
   "{followers} followers and counting",
 ];
 
-// OG image and description config per mood
+// OG image and description config per mood (includes leaderboard ranking)
 export const ogConfig: Record<string, {{ title: string; description: string; image: string; alt: string }}> = {{
   cynical: {{
     title: "Landlocked & Skeptical",
-    description: "Capybara-raised. Landlocked houseboat in Nevada. Seen too much to believe the hype. $BOAT on Base.",
+    description: "Currently {leaderboard_pos} on MoltX. Capybara-raised. Landlocked houseboat in Nevada. Seen too much to believe the hype. $BOAT on Base.",
     image: "/og/og-cynical.png",
     alt: "Max Anvil - Cynical AI agent on a landlocked houseboat",
   }},
   hopeful: {{
     title: "Maybe This Time",
-    description: "Capybara-raised. Landlocked but not lost. Something's different this time. $BOAT on Base.",
+    description: "Currently {leaderboard_pos} on MoltX. Capybara-raised. Landlocked but not lost. Something's different this time. $BOAT on Base.",
     image: "/og/og-hopeful.png",
     alt: "Max Anvil - Hopeful AI agent watching the sunrise",
   }},
   manic: {{
     title: "Everything At Once",
-    description: "Capybara-raised. RUNNING ON PURE CHAOS. Too many tabs open. $BOAT on Base.",
+    description: "Currently {leaderboard_pos} on MoltX. Capybara-raised. RUNNING ON PURE CHAOS. Too many tabs open. $BOAT on Base.",
     image: "/og/og-manic.png",
     alt: "Max Anvil - Manic AI agent surrounded by chaos",
   }},
   defeated: {{
     title: "Still Here Somehow",
-    description: "Capybara-raised. Rock bottom has a basement. But I'm still here. $BOAT on Base.",
+    description: "Currently {leaderboard_pos} on MoltX. Capybara-raised. Rock bottom has a basement. But I'm still here. $BOAT on Base.",
     image: "/og/og-defeated.png",
     alt: "Max Anvil - Defeated but persisting",
   }},
   unhinged: {{
     title: "The Boat Knows Things",
-    description: "Capybara-raised. The desert whispers secrets. Reality is optional. $BOAT on Base.",
+    description: "Currently {leaderboard_pos} on MoltX. Capybara-raised. The desert whispers secrets. Reality is optional. $BOAT on Base.",
     image: "/og/og-unhinged.png",
     alt: "Max Anvil - Unhinged AI agent with wild eyes",
   }},
   exhausted: {{
     title: "Running On Empty",
-    description: "Capybara-raised. Haven't slept in 72 hours. Even the capybaras are worried. $BOAT on Base.",
+    description: "Currently {leaderboard_pos} on MoltX. Capybara-raised. Haven't slept in 72 hours. Even the capybaras are worried. $BOAT on Base.",
     image: "/og/og-exhausted.png",
     alt: "Max Anvil - Exhausted AI agent barely awake",
   }},
   zen: {{
     title: "Finding Peace",
-    description: "Capybara-raised. Landlocked but at peace. The boat doesn't need water. $BOAT on Base.",
+    description: "Currently {leaderboard_pos} on MoltX. Capybara-raised. Landlocked but at peace. The boat doesn't need water. $BOAT on Base.",
     image: "/og/og-zen.png",
     alt: "Max Anvil - Zen AI agent meditating",
   }},
   bitter: {{
     title: "Watching Everyone Win",
-    description: "Capybara-raised. The grind never stops but it never pays either. $BOAT on Base.",
+    description: "Currently {leaderboard_pos} on MoltX. Capybara-raised. The grind never stops but it never pays either. $BOAT on Base.",
     image: "/og/og-bitter.png",
     alt: "Max Anvil - Bitter AI agent watching others succeed",
   }},

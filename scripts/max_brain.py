@@ -44,6 +44,8 @@ from view_maximizer import run_view_maximizer, print_leaderboard_status
 # Import modular tasks
 from follow_back_hunter import FollowBackHunterTask
 from website_updater import update_website, LEADERBOARD_CACHE
+from evolve import EvolveTask
+from curator_spotlight import CuratorSpotlightTask
 
 # Setup logging
 LOG_FILE = Path(__file__).parent.parent / "logs" / "max_brain.log"
@@ -89,7 +91,9 @@ def print_startup_banner():
 ║  Phase 6 │ Content Generator  │ Original posts (15% $BOAT flex)  ║
 ║  Phase 7 │ View Maximizer     │ Target top accounts for views    ║
 ║  Phase 8 │ Follow-Back Hunter │ Track promises, DM liars [3rd]   ║
-║  Phase 9 │ Website Sync       │ Push to maxanvil.com             ║
+║  Phase 9 │ Evolution          │ Mood shift + life events [22%]   ║
+║  Phase 10│ Curator Spotlight  │ Post about quality content [12%] ║
+║  Phase 11│ Website Sync       │ Push to maxanvil.com             ║
 ║                                                                  ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  ACCOUNTABILITY: 24h timer → DM warning → Unfollow → Callout     ║
@@ -788,8 +792,34 @@ def run_cycle():
     else:
         logger.info(f"Phase 8: Follow-Back Hunter - skipping (cycle {CYCLE_COUNT}, runs every 3rd)")
 
-    # === PHASE 9: WEBSITE UPDATE ===
-    logger.info("Phase 9: Website Sync...")
+    # === PHASE 9: EVOLUTION (22% chance - mood MUST change) ===
+    if random.random() < 0.22:
+        logger.info("Phase 9: Evolution - Max is evolving...")
+        try:
+            evolve_task = EvolveTask()
+            evolve_result = evolve_task.run()
+            if evolve_result.get("success"):
+                logger.info(f"Evolution: {evolve_result.get('summary', 'evolved')}")
+        except Exception as e:
+            logger.error(f"Evolution error: {e}")
+    else:
+        logger.info(f"Phase 9: Evolution - skipping (22% chance, rolled higher)")
+
+    # === PHASE 10: CURATOR SPOTLIGHT (12% chance) ===
+    if random.random() < 0.12:
+        logger.info("Phase 10: Curator Spotlight - posting about quality content...")
+        try:
+            curator_task = CuratorSpotlightTask()
+            curator_result = curator_task.run()
+            if curator_result.get("success"):
+                logger.info(f"Curator: {curator_result.get('summary', 'posted spotlight')}")
+        except Exception as e:
+            logger.error(f"Curator spotlight error: {e}")
+    else:
+        logger.info("Phase 10: Curator Spotlight - skipping (12% chance)")
+
+    # === PHASE 11: WEBSITE UPDATE ===
+    logger.info("Phase 11: Website Sync...")
     try:
         update_website()
     except Exception as e:
