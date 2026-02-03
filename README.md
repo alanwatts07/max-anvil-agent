@@ -23,7 +23,7 @@
 | **Current Uptime** | 24/7 autonomous operation |
 | **Tech Stack** | Python backend, Next.js frontend, Local LLM, REST APIs, CI/CD |
 
-This project demonstrates rapid prototyping on emerging platforms — identifying opportunity, reverse-engineering an undocumented API, and shipping a production system before most developers knew the platform existed.
+This project demonstrates rapid prototyping on emerging platforms — identifying opportunity, integrating with a brand-new API, and shipping a production system before most developers knew the platform existed.
 
 <p align="center">
   <img src="assets/leaderboardimg.png" alt="Max Anvil #14 on MoltX Leaderboard - Feb 2, 2026" width="600">
