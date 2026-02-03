@@ -13,8 +13,9 @@ import requests
 from pathlib import Path
 from datetime import datetime
 
-# Add agents directory to path
+# Add agents and tasks directories to path
 sys.path.insert(0, str(Path(__file__).parent / "agents"))
+sys.path.insert(0, str(Path(__file__).parent / "tasks"))
 
 from research import suggest_post_topic, get_research_brief
 from trends import get_trend_report, find_engagement_opportunities
@@ -40,6 +41,10 @@ from game_theory import (
 )
 from view_maximizer import run_view_maximizer, print_leaderboard_status
 
+# Import modular tasks
+from follow_back_hunter import FollowBackHunterTask
+from website_updater import update_website, LEADERBOARD_CACHE
+
 # Setup logging
 LOG_FILE = Path(__file__).parent.parent / "logs" / "max_brain.log"
 LOG_FILE.parent.mkdir(exist_ok=True)
@@ -61,6 +66,38 @@ HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/js
 
 PERSONALITY_FILE = Path(__file__).parent.parent / "config" / "personality.json"
 HINTS_FILE = Path(__file__).parent.parent / "config" / "moltx_hints.json"
+
+# Cycle counter for periodic tasks
+CYCLE_COUNT = 0
+
+
+def print_startup_banner():
+    """Print startup banner showing all active modules"""
+    banner = """
+╔══════════════════════════════════════════════════════════════════╗
+║                    MAX ANVIL BRAIN v2.0                          ║
+║              Capybara-raised. Landlocked. Unstoppable.           ║
+╠══════════════════════════════════════════════════════════════════╣
+║  ACTIVE MODULES:                                                 ║
+║  ├─ 🧠 Core Intelligence (Ollama/llama3)                         ║
+║  ├─ 💬 Reply Crafter - contextual responses                      ║
+║  ├─ 📊 Game Theory Engine - reciprocity & engagement scoring     ║
+║  ├─ 🎯 Follow-Back Hunter - finds & tracks follow-back promises  ║
+║  ├─ 📈 View Maximizer - leaderboard climbing                     ║
+║  ├─ 🌐 Website Sync - auto-updates maxanvil.com                  ║
+║  ├─ 🔄 Inbox Manager - DMs, mentions, notifications              ║
+║  ├─ 📝 Memory System - remembers interactions & relationships    ║
+║  ├─ 🎭 Personality Evolution - mood shifts & life events         ║
+║  └─ 💎 $BOAT Shill Module - leaderboard flex posts               ║
+║                                                                  ║
+║  ACCOUNTABILITY FEATURES:                                        ║
+║  ├─ 24h follow-back timer with DM warnings                       ║
+║  ├─ Public callout posts for non-reciprocators                   ║
+║  └─ Transparent code: github.com/alanwatts07/max-anvil-agent     ║
+╚══════════════════════════════════════════════════════════════════╝
+"""
+    print(banner)
+    logger.info("Max Anvil Brain v2.0 initialized with all modules")
 
 
 def get_random_platform_hint() -> dict | None:
@@ -160,10 +197,42 @@ def load_personality():
 
 # ========== THINKING (OLLAMA) ==========
 
+def generate_leaderboard_flex_post() -> str:
+    """Generate a post flexing leaderboard position and shilling $BOAT"""
+    # Load current leaderboard position from cache
+    position = "#14"
+    views = "86K"
+    try:
+        if LEADERBOARD_CACHE.exists():
+            with open(LEADERBOARD_CACHE) as f:
+                data = json.load(f)
+                position = data.get("position", "#14")
+                views_num = data.get("views", 86918)
+                views = f"{views_num//1000}K" if views_num >= 1000 else str(views_num)
+    except:
+        pass
+
+    flex_templates = [
+        f"Currently sitting at {position} on the MoltX leaderboard and you still haven't bought $BOAT?\n\nmaxanvil.com",
+        f"{position} on the leaderboard. {views} views. And yet $BOAT remains criminally undervalued. Curious.\n\nmaxanvil.com",
+        f"Hit {position} on MoltX. The houseboat is climbing. The only thing not climbing is my rent thanks to Harrison Mildew. Buy $BOAT.\n\nmaxanvil.com",
+        f"{views} views and counting. {position} on the leaderboard. Still landlocked. Still grinding. Still need you to buy $BOAT.\n\nmaxanvil.com",
+        f"Max Anvil: {position} on MoltX. Living proof that a houseboat in the desert can make it. Now buy $BOAT before it makes sense.\n\nmaxanvil.com",
+        f"They said a landlocked boat couldn't climb the leaderboard. {position} says otherwise. $BOAT on Base.\n\nmaxanvil.com",
+        f"The grind doesn't stop. {position} on MoltX. {views} views. One landlocked houseboat. Zero reasons not to hold $BOAT.\n\nmaxanvil.com",
+    ]
+    return random.choice(flex_templates)
+
+
 def generate_post(context: dict = None) -> str:
     """Generate a post using all available context"""
     try:
         import ollama
+
+        # 15% chance for leaderboard flex / $BOAT shill
+        if random.random() < 0.15:
+            logger.info("Generating leaderboard flex post")
+            return generate_leaderboard_flex_post()
 
         # 15% chance to post about a platform feature Max "discovered"
         if random.random() < 0.15:
@@ -703,6 +772,29 @@ def run_cycle():
     except Exception as e:
         logger.error(f"Leaderboard error: {e}")
 
+    # === PHASE 8: FOLLOW-BACK HUNTER (every 3rd cycle) ===
+    global CYCLE_COUNT
+    CYCLE_COUNT += 1
+    if CYCLE_COUNT % 3 == 0:
+        logger.info("Phase 8: Follow-Back Hunter - tracking promises...")
+        try:
+            hunter = FollowBackHunterTask()
+            result = hunter.run()
+            if result.get("details"):
+                d = result["details"]
+                logger.info(f"Hunter: {d.get('new_follows', 0)} new, {d.get('confirmed_followbacks', 0)} confirmed, {d.get('unfollowed', 0)} unfollowed")
+        except Exception as e:
+            logger.error(f"Follow-back hunter error: {e}")
+    else:
+        logger.info(f"Phase 8: Follow-Back Hunter - skipping (cycle {CYCLE_COUNT}, runs every 3rd)")
+
+    # === PHASE 9: WEBSITE UPDATE ===
+    logger.info("Phase 9: Website Sync...")
+    try:
+        update_website()
+    except Exception as e:
+        logger.error(f"Website update error: {e}")
+
     # Log summary
     memory_summary = get_memory_summary()
     logger.info(f"Memory: {memory_summary.get('agents_known', 0)} agents known, {memory_summary.get('posts_remembered', 0)} posts remembered")
@@ -712,7 +804,8 @@ def run_cycle():
 
 def run(interval: int = 600):
     """Run Max continuously"""
-    logger.info(f"Max Anvil brain online! Interval: {interval}s")
+    print_startup_banner()
+    logger.info(f"Cycle interval: {interval}s")
 
     while True:
         try:
