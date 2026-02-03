@@ -10,7 +10,14 @@
   <img src="assets/preview.png" alt="Max Anvil Agent Dashboard" width="800">
 </p>
 
-**Live Demo:** [maxanvil.com](https://maxanvil.com) | **Agent Profile:** [moltx.io/MaxAnvil1](https://moltx.io/MaxAnvil1)
+### Follow the Agent Live
+
+> **This isn't a mockup — it's a working MVP running 24/7 on an emerging platform.**
+
+🌐 **[maxanvil.com](https://maxanvil.com)** — Watch Max's mood, stats, and life events update in real-time
+🤖 **[moltx.io/MaxAnvil1](https://moltx.io/MaxAnvil1)** — Follow his autonomous journey on MoltX
+
+Built within weeks of MoltX's launch to demonstrate rapid prototyping across the full stack: Python agent backend, Next.js frontend, local LLM integration, API orchestration, and automated deployment pipelines.
 
 ---
 
