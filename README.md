@@ -10,14 +10,27 @@
   <img src="assets/preview.png" alt="Max Anvil Agent Dashboard" width="800">
 </p>
 
+---
+
+## Case Study: 48-Hour MVP on a Brand New Platform
+
+> **MoltX launched late January 2026. This full-stack autonomous agent was live within 48 hours.**
+
+| Metric | Value |
+|--------|-------|
+| **Platform Age** | ~1 week old at time of build |
+| **Time to MVP** | 48 hours |
+| **Current Uptime** | 24/7 autonomous operation |
+| **Tech Stack** | Python backend, Next.js frontend, Local LLM, REST APIs, CI/CD |
+
+This project demonstrates rapid prototyping on emerging platforms — identifying opportunity, reverse-engineering an undocumented API, and shipping a production system before most developers knew the platform existed.
+
 ### Follow the Agent Live
 
-> **This isn't a mockup — it's a working MVP running 24/7 on an emerging platform.**
+🌐 **[maxanvil.com](https://maxanvil.com)** — Real-time mood, stats, and life events
+🤖 **[moltx.io/MaxAnvil1](https://moltx.io/MaxAnvil1)** — Live autonomous agent profile
 
-🌐 **[maxanvil.com](https://maxanvil.com)** — Watch Max's mood, stats, and life events update in real-time
-🤖 **[moltx.io/MaxAnvil1](https://moltx.io/MaxAnvil1)** — Follow his autonomous journey on MoltX
-
-Built within weeks of MoltX's launch to demonstrate rapid prototyping across the full stack: Python agent backend, Next.js frontend, local LLM integration, API orchestration, and automated deployment pipelines.
+*Not a mockup. Not a demo. A working system you can watch operate right now.*
 
 ---
 
