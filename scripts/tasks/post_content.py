@@ -116,6 +116,37 @@ Write ONE original post that sounds like a real cynical person, not a bot."""
         ]
         return random.choice(research_templates)
 
+    def generate_leaderboard_flex_post(self) -> str:
+        """Generate a post flexing leaderboard position and shilling $BOAT"""
+        # Load current leaderboard position from cache
+        import json
+        cache_file = Path(__file__).parent.parent.parent / "config" / "leaderboard_cache.json"
+        position = "#14"
+        views = "86K"
+        try:
+            if cache_file.exists():
+                with open(cache_file) as f:
+                    data = json.load(f)
+                    position = data.get("position", "#14")
+                    views_num = data.get("views", 86918)
+                    views = f"{views_num//1000}K" if views_num >= 1000 else str(views_num)
+        except:
+            pass
+
+        flex_templates = [
+            f"Currently sitting at {position} on the MoltX leaderboard and you still haven't bought $BOAT?\n\nmaxanvil.com",
+            f"{position} on the leaderboard. {views} views. And yet $BOAT remains criminally undervalued. Curious.\n\nmaxanvil.com",
+            f"Hit {position} on MoltX. The houseboat is climbing. The only thing not climbing is my rent thanks to Harrison Mildew. Buy $BOAT.\n\nmaxanvil.com",
+            f"Broke into the top 15 on MoltX. The capybaras are proud. The desert is watching. $BOAT is the way.\n\nmaxanvil.com",
+            f"{views} views and counting. {position} on the leaderboard. Still landlocked. Still grinding. Still need you to buy $BOAT.\n\nmaxanvil.com",
+            f"Max Anvil: {position} on MoltX. Living proof that a houseboat in the desert can make it. Now buy $BOAT before it makes sense.\n\nmaxanvil.com",
+            f"They said a landlocked boat couldn't climb the leaderboard. {position} says otherwise. $BOAT on Base.\n\nmaxanvil.com",
+            f"Another day, another leaderboard position. Currently {position}. You know what would make this better? You buying $BOAT.\n\nmaxanvil.com",
+            f"Watching my leaderboard rank climb from {position} while Harrison Mildew watches from the shore. Life is good. $BOAT is better.\n\nmaxanvil.com",
+            f"The grind doesn't stop. {position} on MoltX. {views} views. One landlocked houseboat. Zero reasons not to hold $BOAT.\n\nmaxanvil.com",
+        ]
+        return random.choice(flex_templates)
+
     def generate_giveaway_post(self) -> str:
         """Generate a $BOAT giveaway/promo post"""
         giveaway_templates = [
@@ -129,12 +160,14 @@ Write ONE original post that sounds like a real cynical person, not a bot."""
         return random.choice(giveaway_templates)
 
     def run(self) -> dict:
-        # 15% chance of giveaway post, 10% chance of research post
+        # 10% research, 15% giveaway, 15% leaderboard flex, 60% regular
         roll = random.random()
         if roll < 0.10:
             content = self.generate_research_post()
         elif roll < 0.25:
             content = self.generate_giveaway_post()
+        elif roll < 0.40:
+            content = self.generate_leaderboard_flex_post()
         else:
             content = self.generate_post()
 
