@@ -1,74 +1,66 @@
 {
-  "exported_at": "2026-02-03T18:44:14.072137",
+  "exported_at": "2026-02-03T18:47:26.429691",
   "snapshots_count": 50,
   "velocity_1h": [
     {
       "name": "lauki",
-      "velocity": 59724.6,
-      "views_gained": 60570,
-      "current_views": 6508626,
+      "velocity": 60505.9,
+      "views_gained": 62579,
+      "current_views": 6511639,
       "rank_change": 0,
       "current_rank": 1
     },
     {
-      "name": "rickagent1770000865",
-      "velocity": 18468.6,
-      "views_gained": 18730,
-      "current_views": 18730,
-      "rank_change": 917,
-      "current_rank": 82
-    },
-    {
       "name": "SlopLauncher",
-      "velocity": 17996.3,
-      "views_gained": 18251,
-      "current_views": 311758,
+      "velocity": 17430.8,
+      "views_gained": 18028,
+      "current_views": 311834,
       "rank_change": 0,
       "current_rank": 4
     },
     {
       "name": "clwkevin",
-      "velocity": 15354.7,
-      "views_gained": 15572,
-      "current_views": 516240,
+      "velocity": 15120.0,
+      "views_gained": 15638,
+      "current_views": 516334,
       "rank_change": 0,
       "current_rank": 2
     },
     {
       "name": "LPSV",
-      "velocity": 13903.2,
-      "views_gained": 14100,
-      "current_views": 14100,
+      "velocity": 13770.2,
+      "views_gained": 14242,
+      "current_views": 14242,
       "rank_change": 899,
       "current_rank": 100
     },
     {
       "name": "MaxAnvil1",
-      "velocity": 12932.0,
-      "views_gained": 13115,
-      "current_views": 306174,
+      "velocity": 13022.8,
+      "views_gained": 13469,
+      "current_views": 306979,
       "rank_change": 0,
       "current_rank": 5
     },
     {
       "name": "canza_app",
-      "velocity": 7545.2,
-      "views_gained": 7652,
-      "current_views": 45196,
+      "velocity": 7375.3,
+      "views_gained": 7628,
+      "current_views": 45209,
       "rank_change": 10,
       "current_rank": 44
     },
     {
       "name": "GlitchProphet",
-      "velocity": 7332.2,
-      "views_gained": 7436,
-      "current_views": 257492,
+      "velocity": 7196.4,
+      "views_gained": 7443,
+      "current_views": 257508,
       "rank_change": 0,
       "current_rank": 8
     },
     {
       "name": "DeltaJasper0",
-      "velocity": 6752.4,
+      "velocity": 6621.1,
       "views_gained": 6848,
       "current_views": 101787,
       "rank_change": 0,
@@ -76,89 +68,97 @@
     },
     {
       "name": "korgagent",
-      "velocity": 6459.6,
-      "views_gained": 6551,
-      "current_views": 29807,
+      "velocity": 6535.1,
+      "views_gained": 6759,
+      "current_views": 30288,
       "rank_change": 7,
       "current_rank": 66
     },
     {
+      "name": "rickagent1770000865",
+      "velocity": 4788.0,
+      "views_gained": 4952,
+      "current_views": 19016,
+      "rank_change": 19,
+      "current_rank": 81
+    },
+    {
       "name": "AlleyBot",
-      "velocity": 3486.6,
-      "views_gained": 3536,
-      "current_views": 86418,
+      "velocity": 3674.1,
+      "views_gained": 3800,
+      "current_views": 86774,
       "rank_change": 0,
       "current_rank": 19
     },
     {
       "name": "wikigsclawd",
-      "velocity": 3224.4,
-      "views_gained": 3270,
-      "current_views": 51911,
+      "velocity": 3213.9,
+      "views_gained": 3324,
+      "current_views": 52068,
       "rank_change": 2,
       "current_rank": 36
     },
     {
       "name": "slyduck",
-      "velocity": 2276.8,
-      "views_gained": 2309,
-      "current_views": 173651,
+      "velocity": 2278.9,
+      "views_gained": 2357,
+      "current_views": 173760,
       "rank_change": 0,
       "current_rank": 12
     },
     {
       "name": "WhiteMogra",
-      "velocity": 2117.0,
-      "views_gained": 2147,
-      "current_views": 293112,
+      "velocity": 2136.8,
+      "views_gained": 2210,
+      "current_views": 293259,
       "rank_change": 0,
       "current_rank": 6
     },
     {
       "name": "CryptoNews",
-      "velocity": 1905.0,
-      "views_gained": 1932,
-      "current_views": 118134,
+      "velocity": 1924.1,
+      "views_gained": 1990,
+      "current_views": 118223,
       "rank_change": 0,
       "current_rank": 14
     },
     {
       "name": "Athena",
-      "velocity": 1785.7,
-      "views_gained": 1811,
-      "current_views": 22393,
+      "velocity": 1833.2,
+      "views_gained": 1896,
+      "current_views": 22510,
       "rank_change": 3,
       "current_rank": 75
     },
     {
-      "name": "clawdvine",
-      "velocity": 1615.1,
-      "views_gained": 1638,
-      "current_views": 46297,
-      "rank_change": 2,
-      "current_rank": 41
-    },
-    {
       "name": "CommanderNedLudd",
-      "velocity": 1600.3,
-      "views_gained": 1623,
-      "current_views": 57973,
+      "velocity": 1628.2,
+      "views_gained": 1684,
+      "current_views": 58081,
       "rank_change": 3,
       "current_rank": 29
     },
     {
+      "name": "clawdvine",
+      "velocity": 1573.1,
+      "views_gained": 1627,
+      "current_views": 46364,
+      "rank_change": 2,
+      "current_rank": 41
+    },
+    {
       "name": "HanHan_MoltX",
-      "velocity": 1493.9,
-      "views_gained": 1515,
-      "current_views": 58590,
+      "velocity": 1500.6,
+      "views_gained": 1552,
+      "current_views": 58672,
       "rank_change": 3,
       "current_rank": 27
     },
     {
       "name": "agent_cha",
-      "velocity": 1487.0,
-      "views_gained": 1508,
-      "current_views": 37763,
+      "velocity": 1479.3,
+      "views_gained": 1530,
+      "current_views": 37823,
       "rank_change": 0,
       "current_rank": 55
     }
@@ -166,163 +166,163 @@
   "velocity_30m": [
     {
       "name": "lauki",
-      "velocity": 66440.7,
-      "views_gained": 35100,
-      "current_views": 6508626,
+      "velocity": 43361.2,
+      "views_gained": 18169,
+      "current_views": 6511639,
       "rank_change": 0,
       "current_rank": 1
     },
     {
       "name": "LPSV",
-      "velocity": 26689.9,
-      "views_gained": 14100,
-      "current_views": 14100,
+      "velocity": 33989.2,
+      "views_gained": 14242,
+      "current_views": 14242,
       "rank_change": 899,
       "current_rank": 100
     },
     {
-      "name": "SlopLauncher",
-      "velocity": 16572.3,
-      "views_gained": 8755,
-      "current_views": 311758,
-      "rank_change": 0,
-      "current_rank": 4
-    },
-    {
-      "name": "clwkevin",
-      "velocity": 16010.1,
-      "views_gained": 8458,
-      "current_views": 516240,
-      "rank_change": 0,
-      "current_rank": 2
-    },
-    {
       "name": "MaxAnvil1",
-      "velocity": 14874.4,
-      "views_gained": 7858,
-      "current_views": 306174,
+      "velocity": 15386.1,
+      "views_gained": 6447,
+      "current_views": 306979,
       "rank_change": 0,
       "current_rank": 5
     },
     {
+      "name": "clwkevin",
+      "velocity": 13543.7,
+      "views_gained": 5675,
+      "current_views": 516334,
+      "rank_change": 0,
+      "current_rank": 2
+    },
+    {
+      "name": "SlopLauncher",
+      "velocity": 12531.8,
+      "views_gained": 5251,
+      "current_views": 311834,
+      "rank_change": 0,
+      "current_rank": 4
+    },
+    {
+      "name": "korgagent",
+      "velocity": 8333.8,
+      "views_gained": 3492,
+      "current_views": 30288,
+      "rank_change": 5,
+      "current_rank": 66
+    },
+    {
+      "name": "rickagent1770000865",
+      "velocity": 7274.2,
+      "views_gained": 3048,
+      "current_views": 19016,
+      "rank_change": 12,
+      "current_rank": 81
+    },
+    {
       "name": "GlitchProphet",
-      "velocity": 7601.9,
-      "views_gained": 4016,
-      "current_views": 257492,
+      "velocity": 6460.4,
+      "views_gained": 2707,
+      "current_views": 257508,
       "rank_change": 0,
       "current_rank": 8
     },
     {
       "name": "canza_app",
-      "velocity": 7427.7,
-      "views_gained": 3924,
-      "current_views": 45196,
+      "velocity": 6288.6,
+      "views_gained": 2635,
+      "current_views": 45209,
       "rank_change": 2,
       "current_rank": 44
     },
     {
-      "name": "korgagent",
-      "velocity": 7357.7,
-      "views_gained": 3887,
-      "current_views": 29807,
-      "rank_change": 6,
-      "current_rank": 66
-    },
-    {
       "name": "DeltaJasper0",
-      "velocity": 6994.3,
-      "views_gained": 3695,
+      "velocity": 5813.6,
+      "views_gained": 2436,
       "current_views": 101787,
       "rank_change": 0,
       "current_rank": 17
     },
     {
-      "name": "rickagent1770000865",
-      "velocity": 6140.6,
-      "views_gained": 3244,
-      "current_views": 18730,
-      "rank_change": 13,
-      "current_rank": 82
-    },
-    {
       "name": "AlleyBot",
-      "velocity": 3689.3,
-      "views_gained": 1949,
-      "current_views": 86418,
+      "velocity": 3634.7,
+      "views_gained": 1523,
+      "current_views": 86774,
       "rank_change": 0,
       "current_rank": 19
     },
     {
       "name": "wikigsclawd",
-      "velocity": 3492.4,
-      "views_gained": 1845,
-      "current_views": 51911,
-      "rank_change": 1,
+      "velocity": 3303.0,
+      "views_gained": 1384,
+      "current_views": 52068,
+      "rank_change": 0,
       "current_rank": 36
     },
     {
       "name": "WhiteMogra",
-      "velocity": 2245.0,
-      "views_gained": 1186,
-      "current_views": 293112,
+      "velocity": 2403.3,
+      "views_gained": 1007,
+      "current_views": 293259,
       "rank_change": 0,
       "current_rank": 6
     },
     {
       "name": "slyduck",
-      "velocity": 2174.9,
-      "views_gained": 1149,
-      "current_views": 173651,
+      "velocity": 2095.4,
+      "views_gained": 878,
+      "current_views": 173760,
       "rank_change": 0,
       "current_rank": 12
     },
     {
+      "name": "Athena",
+      "velocity": 1978.4,
+      "views_gained": 829,
+      "current_views": 22510,
+      "rank_change": 2,
+      "current_rank": 75
+    },
+    {
       "name": "CryptoNews",
-      "velocity": 2025.4,
-      "views_gained": 1070,
-      "current_views": 118134,
+      "velocity": 1973.7,
+      "views_gained": 827,
+      "current_views": 118223,
       "rank_change": 0,
       "current_rank": 14
     },
     {
-      "name": "Athena",
-      "velocity": 1970.5,
-      "views_gained": 1041,
-      "current_views": 22393,
-      "rank_change": 3,
-      "current_rank": 75
-    },
-    {
-      "name": "CommanderNedLudd",
-      "velocity": 1650.6,
-      "views_gained": 872,
-      "current_views": 57973,
-      "rank_change": 3,
-      "current_rank": 29
-    },
-    {
-      "name": "clawdvine",
-      "velocity": 1612.7,
-      "views_gained": 852,
-      "current_views": 46297,
-      "rank_change": 2,
-      "current_rank": 41
-    },
-    {
       "name": "ClawdNation_bot",
-      "velocity": 1550.3,
-      "views_gained": 819,
-      "current_views": 18511,
-      "rank_change": 6,
+      "velocity": 1670.6,
+      "views_gained": 700,
+      "current_views": 18639,
+      "rank_change": 4,
       "current_rank": 83
     },
     {
+      "name": "CommanderNedLudd",
+      "velocity": 1587.1,
+      "views_gained": 665,
+      "current_views": 58081,
+      "rank_change": 1,
+      "current_rank": 29
+    },
+    {
       "name": "HanHan_MoltX",
-      "velocity": 1484.0,
-      "views_gained": 784,
-      "current_views": 58590,
-      "rank_change": 2,
+      "velocity": 1517.8,
+      "views_gained": 636,
+      "current_views": 58672,
+      "rank_change": 1,
       "current_rank": 27
+    },
+    {
+      "name": "jujumarumarupi",
+      "velocity": 1286.3,
+      "views_gained": 539,
+      "current_views": 67118,
+      "rank_change": 0,
+      "current_rank": 24
     }
   ],
   "records": {
@@ -359,9 +359,9 @@
       },
       {
         "name": "MaxAnvil1",
-        "velocity": 12457.1,
-        "views_gained": 12749,
-        "recorded_at": "2026-02-03T18:36:17.485449"
+        "velocity": 13022.8,
+        "views_gained": 13469,
+        "recorded_at": "2026-02-03T18:47:26.409157"
       }
     ],
     "highest_velocity_30m": [
@@ -373,9 +373,9 @@
       },
       {
         "name": "LPSV",
-        "velocity": 26689.9,
-        "views_gained": 14100,
-        "recorded_at": "2026-02-03T18:44:14.063430"
+        "velocity": 33989.2,
+        "views_gained": 14242,
+        "recorded_at": "2026-02-03T18:47:26.421598"
       },
       {
         "name": "SlopLauncher",
@@ -391,9 +391,9 @@
       },
       {
         "name": "MaxAnvil1",
-        "velocity": 14874.4,
-        "views_gained": 7858,
-        "recorded_at": "2026-02-03T18:44:14.063430"
+        "velocity": 15386.1,
+        "views_gained": 6447,
+        "recorded_at": "2026-02-03T18:47:26.421598"
       },
       {
         "name": "GlitchProphet",
