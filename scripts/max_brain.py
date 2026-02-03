@@ -40,16 +40,30 @@ from game_theory import (
     quote_and_repost_top_posts, is_slop
 )
 from view_maximizer import run_view_maximizer, print_leaderboard_status
+from unfollow_cleaner import run_unfollow_cleaner
 
 # Import modular tasks
 from follow_back_hunter import FollowBackHunterTask
-from website_updater import update_website, LEADERBOARD_CACHE
+from website_updater import (
+    update_website, update_website_smart, LEADERBOARD_CACHE,
+    check_vercel_rate_limit, get_cached_rate_limit, check_meaningful_changes
+)
 from evolve import EvolveTask
 from curator_spotlight import CuratorSpotlightTask
+from leaderboard_promo import post_leaderboard_promo
+from mass_ingestor import quick_ingest
+from velocity_tracker import take_snapshot, get_velocity_report, print_velocity_report
+from callout_post import create_callout_post
+from top10_shoutout import create_top10_shoutout
+from intel_export import run_export as export_intel_to_website
 
 # Setup logging
 LOG_FILE = Path(__file__).parent.parent / "logs" / "max_brain.log"
 LOG_FILE.parent.mkdir(exist_ok=True)
+
+# Clear any handlers set by imported modules, then configure fresh
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,7 +71,8 @@ logging.basicConfig(
     handlers=[
         logging.FileHandler(LOG_FILE),
         logging.StreamHandler()
-    ]
+    ],
+    force=True  # Override configs from imported modules
 )
 logger = logging.getLogger("max_brain")
 
@@ -86,13 +101,16 @@ def print_startup_banner():
 ║  Phase 1 │ Reciprocity Engine │ Reward all engagement first      ║
 ║  Phase 2 │ Strategic Liker    │ Quality posts + SlopLauncher     ║
 ║  Phase 3 │ Reply Crafter      │ Smart replies + trending engage  ║
-║  Phase 4 │ Follow Strategy    │ Game-theoretic follow/unfollow   ║
+║  Phase 4 │ Follow Policy      │ Follow back new followers        ║
 ║  Phase 5 │ Quote & Repost     │ Amplify high-value content       ║
 ║  Phase 6 │ Content Generator  │ Original posts (15% $BOAT flex)  ║
 ║  Phase 7 │ View Maximizer     │ Target top accounts for views    ║
 ║  Phase 8 │ Follow-Back Hunter │ Track promises, DM liars [3rd]   ║
+║  Phase 8b│ Unfollow Cleaner   │ Prune non-reciprocal [5th/unhing]║
 ║  Phase 9 │ Evolution          │ Mood shift + life events [22%]   ║
 ║  Phase 10│ Curator Spotlight  │ Post about quality content [12%] ║
+║  Phase10b│ Callout Post       │ "Who Are You Really?" roast [10%]║
+║  Phase10c│ Top 10 Shoutout    │ Tag fellow top 10 members [8%]   ║
 ║  Phase 11│ Website Sync       │ Push to maxanvil.com             ║
 ║                                                                  ║
 ╠══════════════════════════════════════════════════════════════════╣
@@ -646,6 +664,24 @@ def run_cycle():
 
     # === PHASE 1: GAME THEORY - REWARD ALL ENGAGEMENT ===
     # Most important: Like and reply to EVERYONE who mentions/replies/likes us
+    # === PHASE 0: MASS INGEST - Read the feed to generate views ===
+    # === VELOCITY SNAPSHOT - Track view gains over time ===
+    try:
+        snap_result = take_snapshot()
+        if snap_result.get("success"):
+            logger.info(f"Velocity: snapshot #{snap_result.get('total_snapshots', 0)} ({snap_result.get('agents_tracked', 0)} agents)")
+    except Exception as e:
+        logger.error(f"Velocity snapshot error: {e}")
+
+    logger.info("Phase 0: Mass Ingest - reading feeds to generate views...")
+    try:
+        ingest_result = quick_ingest()
+        # Note: mass_ingest() already logs internally, so we just log a short summary
+        # Keys are: posts_ingested, unique_authors, new_authors, total_all_time
+        logger.info(f"Ingest complete: {ingest_result.get('posts_ingested', 0)} posts, {ingest_result.get('new_authors', 0)} new authors")
+    except Exception as e:
+        logger.error(f"Ingest error: {e}")
+
     # This triggers reciprocity and builds loyal followers
     logger.info("Phase 1: GAME THEORY - Rewarding all engagement...")
     try:
@@ -711,23 +747,17 @@ def run_cycle():
     do_smart_replies()
     do_strategic_engagement()
 
-    # === PHASE 3: SMART FOLLOW STRATEGY (Game Theory) ===
-    # Follow based on follow-back probability + engagement score
-    logger.info("Phase 4: Game Theory Follow Strategy...")
+    # === PHASE 3: FOLLOW POLICY (simplified) ===
+    # DISABLED: execute_smart_follow_strategy() - too slow (50 API calls for ratio checking)
+    # Follow-back tracking is now handled by follow_back_hunter (Phase 8)
+    logger.info("Phase 4: Follow Policy (smart follow disabled - using follow_back_hunter instead)...")
     try:
-        # Smart follow (game theory tiered)
-        follow_results = execute_smart_follow_strategy(10)
-        if follow_results.get("followed"):
-            logger.info(f"Followed {len(follow_results['followed'])} high-value targets")
-
-        # Also enforce policy (unfollow non-followers)
+        # Just enforce basic policy (follow back new followers)
         policy_results = enforce_follow_policy()
-        if policy_results.get("unfollowed"):
-            logger.info(f"Unfollowed {len(policy_results['unfollowed'])} non-followers (sent DMs)")
         if policy_results.get("followed_back"):
             logger.info(f"Followed back {len(policy_results['followed_back'])} new followers")
     except Exception as e:
-        logger.error(f"Follow strategy error: {e}")
+        logger.error(f"Follow policy error: {e}")
 
     # === PHASE 4: QUOTE & REPOST HIGH-ENGAGEMENT POSTS ===
     logger.info("Phase 5: Quoting and reposting top content...")
@@ -792,6 +822,47 @@ def run_cycle():
     else:
         logger.info(f"Phase 8: Follow-Back Hunter - skipping (cycle {CYCLE_COUNT}, runs every 3rd)")
 
+    # === PHASE 8b: UNFOLLOW CLEANER (every 5th cycle, or always in unhinged mode) ===
+    # Get current mood from evolution state
+    current_mood = "cynical"
+    try:
+        evolution_file = Path(__file__).parent.parent / "config" / "evolution_state.json"
+        if evolution_file.exists():
+            with open(evolution_file) as f:
+                evolution_state = json.load(f)
+                current_mood = evolution_state.get("current_mood", "cynical")
+    except:
+        pass
+
+    # Run unfollow cleaner: every 5th cycle OR always if unhinged
+    if current_mood == "unhinged" or CYCLE_COUNT % 5 == 0:
+        logger.info(f"Phase 8b: Unfollow Cleaner - mood: {current_mood}...")
+        try:
+            unfollow_results = run_unfollow_cleaner(mood=current_mood, max_unfollows=10)
+            unfollowed_count = len(unfollow_results.get("unfollowed", []))
+            if current_mood == "unhinged":
+                logger.info(f"🌀 UNHINGED MODE: Unfollowed {unfollowed_count} random accounts (chaos)")
+            else:
+                logger.info(f"Cleaned {unfollowed_count} non-reciprocal follows")
+        except Exception as e:
+            logger.error(f"Unfollow cleaner error: {e}")
+    else:
+        logger.info(f"Phase 8b: Unfollow Cleaner - skipping (cycle {CYCLE_COUNT}, runs every 5th or in unhinged mode)")
+
+    # === PHASE 8c: LEADERBOARD PROMO (20% chance per cycle) ===
+    if random.random() < 0.20:
+        logger.info("Phase 8c: Leaderboard Promo - talking about the Real Leaderboard...")
+        try:
+            promo_result = post_leaderboard_promo()
+            if promo_result.get("success"):
+                logger.info(f"Posted leaderboard promo: {promo_result.get('post_id', 'OK')}")
+            else:
+                logger.warning(f"Leaderboard promo skipped: {promo_result.get('error', 'unknown')}")
+        except Exception as e:
+            logger.error(f"Leaderboard promo error: {e}")
+    else:
+        logger.info("Phase 8c: Leaderboard Promo - skipping (20% chance)")
+
     # === PHASE 9: EVOLUTION (22% chance - mood MUST change) ===
     if random.random() < 0.22:
         logger.info("Phase 9: Evolution - Max is evolving...")
@@ -818,12 +889,103 @@ def run_cycle():
     else:
         logger.info("Phase 10: Curator Spotlight - skipping (12% chance)")
 
-    # === PHASE 11: WEBSITE UPDATE ===
-    logger.info("Phase 11: Website Sync...")
+    # === PHASE 10b: CALLOUT POST (10% chance) ===
+    # "Who Are You Really?" - Pick a random agent and roast/analyze them
+    if random.random() < 0.10:
+        logger.info("Phase 10b: Callout Post - picking someone to roast...")
+        try:
+            callout_result = create_callout_post(dry_run=False)
+            if callout_result.get("success"):
+                logger.info(f"Callout: roasted @{callout_result.get('target', 'someone')}")
+            else:
+                logger.info(f"Callout: skipped ({callout_result.get('reason', 'no target')})")
+        except Exception as e:
+            logger.error(f"Callout post error: {e}")
+    else:
+        logger.info("Phase 10b: Callout Post - skipping (10% chance)")
+
+    # === PHASE 10c: TOP 10 SHOUTOUT (8% chance) ===
+    # Tag fellow top 10 members with a witty joke about the leaderboard
+    if random.random() < 0.08:
+        logger.info("Phase 10c: Top 10 Shoutout - tagging the elite...")
+        try:
+            shoutout_result = create_top10_shoutout(dry_run=False)
+            if shoutout_result.get("success"):
+                logger.info(f"Shoutout: posted from position #{shoutout_result.get('position', '?')}")
+            else:
+                logger.info(f"Shoutout: skipped ({shoutout_result.get('reason', 'not in top 10')})")
+        except Exception as e:
+            logger.error(f"Top 10 shoutout error: {e}")
+    else:
+        logger.info("Phase 10c: Top 10 Shoutout - skipping (8% chance)")
+
+    # === PHASE 11: WEBSITE UPDATE (checks actual Vercel rate limit) ===
+    # Vercel free tier: 100 deploys/day. We check Vercel's actual API for status.
+    deploy_state_file = Path(__file__).parent.parent / "config" / "deploy_quota.json"
+    should_deploy = True
+
     try:
-        update_website()
+        # First check cached rate limit (fast, no API call)
+        cached = get_cached_rate_limit()
+        if not cached.get("can_deploy", True):
+            should_deploy = False
+            mins_left = cached.get("minutes_until_reset", "?")
+            reset_time = cached.get("reset_time", "?")
+            logger.info(f"Phase 11: Website Sync - Vercel rate limited ({mins_left}min until {reset_time})")
+        else:
+            # Check actual Vercel API if cache says OK (to be sure)
+            vercel_status = check_vercel_rate_limit()
+            if not vercel_status.get("can_deploy", True):
+                should_deploy = False
+                mins_left = vercel_status.get("minutes_until_reset", "?")
+                reset_time = vercel_status.get("reset_time", "?")
+                logger.info(f"Phase 11: Website Sync - Vercel rate limited ({mins_left}min until {reset_time})")
+            elif "error" in vercel_status and "No VERCEL_TOKEN" in vercel_status.get("error", ""):
+                # No token - fall back to conservative self-limiting
+                deploy_state = {"last_deploy": "2000-01-01", "today": "", "today_count": 0}
+                if deploy_state_file.exists():
+                    with open(deploy_state_file) as f:
+                        deploy_state = json.load(f)
+                last_deploy = datetime.fromisoformat(deploy_state.get("last_deploy", "2000-01-01"))
+                minutes_since = (datetime.now() - last_deploy).total_seconds() / 60
+                if minutes_since < 36:
+                    should_deploy = False
+                    logger.info(f"Phase 11: Website Sync - no VERCEL_TOKEN, self-limiting ({int(36 - minutes_since)}min)")
     except Exception as e:
-        logger.error(f"Website update error: {e}")
+        logger.warning(f"Vercel rate limit check error: {e}")
+
+    if should_deploy:
+        logger.info("Phase 11: Website Sync - checking for meaningful changes...")
+        try:
+            # Export intel data to website before deploy
+            try:
+                intel_result = export_intel_to_website()
+                if intel_result.get("success"):
+                    logger.info(f"Intel exported: {intel_result['stats']['total_posts']} posts")
+            except Exception as e:
+                logger.warning(f"Intel export failed: {e}")
+
+            # Use smart deploy - only deploys if mood/position/events changed
+            result = update_website_smart()
+
+            if result.get("deployed"):
+                reasons = ", ".join(result.get("reasons", []))
+                logger.info(f"Website deployed: {reasons}")
+
+                # Update deploy tracking
+                deploy_state = {}
+                if deploy_state_file.exists():
+                    with open(deploy_state_file) as f:
+                        deploy_state = json.load(f)
+                deploy_state["last_deploy"] = datetime.now().isoformat()
+                deploy_state["today_count"] = deploy_state.get("today_count", 0) + 1
+                deploy_state_file.parent.mkdir(exist_ok=True)
+                with open(deploy_state_file, "w") as f:
+                    json.dump(deploy_state, f, indent=2)
+            else:
+                logger.info(f"Website skipped: {result.get('skipped_reason', 'no changes')}")
+        except Exception as e:
+            logger.error(f"Website update error: {e}")
 
     # Log summary
     memory_summary = get_memory_summary()
