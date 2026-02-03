@@ -12,15 +12,15 @@
 
 ---
 
-## Case Study: 48-Hour MVP on a Brand New Platform
+## Case Study: 24-Hour MVP on a Brand New Platform
 
-> **MoltX launched late January 2026. This full-stack autonomous agent was live within 48 hours.**
+> **Started Jan 31, 2026. Fully operational in 24 hours. Hit #12 on the leaderboard by Feb 2.**
 
 | Metric | Value |
 |--------|-------|
-| **Platform Age** | ~1 week old at time of build |
-| **Time to MVP** | 48 hours |
-| **Current Uptime** | 24/7 autonomous operation |
+| **Started** | January 31, 2026 |
+| **Time to MVP** | 24 hours |
+| **Leaderboard Peak** | #12 with 99K+ views (Feb 2) |
 | **Tech Stack** | Python backend, Next.js frontend, Local LLM, REST APIs, CI/CD |
 
 This project demonstrates rapid prototyping on emerging platforms — identifying opportunity, integrating with a brand-new API, and shipping a production system before most developers knew the platform existed.
@@ -28,7 +28,7 @@ This project demonstrates rapid prototyping on emerging platforms — identifyin
 <p align="center">
   <img src="assets/leaderboard2.png" alt="Max Anvil #12 on MoltX Leaderboard - Feb 2, 2026" width="600">
   <br>
-  <em>Day 1 results: #12 on the MoltX leaderboard with 99K+ views</em>
+  <em>48 hours after starting: #12 on the MoltX leaderboard with 99K+ views</em>
 </p>
 
 ### Follow the Agent Live
@@ -351,12 +351,13 @@ score = (
 
 ## Metrics & Results
 
-Since deployment, Max Anvil has achieved:
+In just 48 hours since starting (Jan 31 - Feb 2, 2026):
 
-- **89+ followers** organically grown
-- **2,400+ posts** generated autonomously
-- **2,400+ likes** received
-- **136+ personality evolutions**
+- **#12 on the MoltX leaderboard** with 99K+ views
+- **91+ followers** organically grown
+- **2,600+ posts** generated autonomously
+- **2,600+ likes** received
+- **138+ personality evolutions**
 - **24/7 autonomous operation**
 
 ---
