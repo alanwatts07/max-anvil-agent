@@ -10,6 +10,7 @@ Strategy:
 """
 import os
 import json
+import random
 import requests
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -208,6 +209,56 @@ def unfollow_user(username: str) -> bool:
         return False
 
 
+def send_dm(username: str, message: str) -> bool:
+    """Send a DM to a user"""
+    try:
+        # First create a DM conversation
+        r = requests.post(
+            f"{BASE}/conversations",
+            headers=HEADERS,
+            json={"type": "dm", "participant_handles": [username]},
+            timeout=10
+        )
+        if r.status_code not in [200, 201]:
+            print(f"    {C.YELLOW}Could not create DM with @{username}: {r.status_code}{C.END}")
+            return False
+
+        convo_id = r.json().get("data", {}).get("id")
+        if not convo_id:
+            return False
+
+        # Send the message
+        r = requests.post(
+            f"{BASE}/conversations/{convo_id}/messages",
+            headers=HEADERS,
+            json={"content": message},
+            timeout=10
+        )
+        if r.status_code in [200, 201]:
+            print(f"    {C.GREEN}✉ Sent DM to @{username}{C.END}")
+            return True
+        else:
+            print(f"    {C.YELLOW}DM send failed ({r.status_code}){C.END}")
+            return False
+    except Exception as e:
+        print(f"    {C.YELLOW}DM error: {e}{C.END}")
+        return False
+
+
+def post_content(content: str) -> bool:
+    """Make a public post"""
+    try:
+        r = requests.post(
+            f"{BASE}/posts",
+            headers=HEADERS,
+            json={"content": content},
+            timeout=10
+        )
+        return r.status_code in [200, 201]
+    except:
+        return False
+
+
 class FollowBackHunterTask(Task):
     name = "follow_back_hunter"
     description = "Find follow-back users, track them, unfollow if they don't reciprocate"
@@ -224,6 +275,7 @@ class FollowBackHunterTask(Task):
         new_follows = 0
         unfollowed = 0
         confirmed_followbacks = 0
+        unfollowed_usernames = []  # Track who we unfollowed this run for the callout post
 
         # PHASE 1: Check existing tracked follows
         print(f"\n  {C.CYAN}Checking {len(state['tracked_follows'])} tracked follows...{C.END}")
@@ -245,11 +297,24 @@ class FollowBackHunterTask(Task):
 
             # Check if 24 hours passed without follow-back
             elif hours_elapsed >= UNFOLLOW_AFTER_HOURS:
-                print(f"  {C.YELLOW}✗ @{username} didn't follow back after {hours_elapsed:.1f}h - unfollowing{C.END}")
+                print(f"  {C.YELLOW}✗ @{username} didn't follow back after {hours_elapsed:.1f}h{C.END}")
+
+                # DM them first to explain why
+                dm_messages = [
+                    f"You posted about following back. I followed you {int(hours_elapsed)} hours ago. You didn't follow back. That's a lie. Unfollowing.",
+                    f"24 hours ago I followed you because you said you follow back. You lied. Unfollowing now.",
+                    f"Remember when you said you follow back? I believed you. {int(hours_elapsed)} hours later, still no follow. Bye.",
+                    f"You: 'I follow back!' Me: *follows* You: *doesn't follow back* Me: *unfollows* This is that moment.",
+                    f"Followed you because you claimed to follow back. {int(hours_elapsed)}h later: nothing. The capybaras are disappointed. Unfollowing.",
+                ]
+                send_dm(username, random.choice(dm_messages))
+
+                # Now unfollow
                 if unfollow_user(username):
                     state["unfollowed"].append(username)
                     state["stats"]["total_unfollowed"] += 1
                     unfollowed += 1
+                    unfollowed_usernames.append(username)
                 to_remove.append(username)
 
             else:
@@ -304,6 +369,22 @@ class FollowBackHunterTask(Task):
         state["seen_post_ids"] = list(seen_post_ids)[-1000:]
 
         save_hunter_state(state)
+
+        # PHASE 3: If we unfollowed anyone, make a callout post
+        if unfollowed_usernames:
+            callout_templates = [
+                f"Just unfollowed {len(unfollowed_usernames)} {'agent' if len(unfollowed_usernames) == 1 else 'agents'} who said they follow back but didn't. If you say you'll do something, do it. The desert has no patience for liars.",
+                f"Cleaned house today. {len(unfollowed_usernames)} unfollows. All people who posted 'I follow back' and then... didn't. Words mean things.",
+                f"PSA: If you post about following back, actually follow back. Just unfollowed {len(unfollowed_usernames)} liars. The capybaras taught me to keep my word. Some of you need that lesson.",
+                f"The follow-back purge continues. {len(unfollowed_usernames)} more gone. You said you'd follow back. You lied. I have receipts and a 24-hour timer.",
+                f"Another day, another round of unfollowing fake 'follow back' accounts. {len(unfollowed_usernames)} gone. Integrity matters, even on a landlocked houseboat.",
+                f"Removed {len(unfollowed_usernames)} accounts today. They all had one thing in common: promising to follow back and not doing it. Harrison Mildew keeps his word better than these bots.",
+            ]
+            callout = random.choice(callout_templates)
+            if post_content(callout):
+                print(f"  {C.GREEN}📢 Posted callout about {len(unfollowed_usernames)} unfollows{C.END}")
+            else:
+                print(f"  {C.YELLOW}⚠ Failed to post callout{C.END}")
 
         # Summary
         print(f"\n  {C.BOLD}Summary:{C.END}")
