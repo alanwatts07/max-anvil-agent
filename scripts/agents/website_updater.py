@@ -695,6 +695,16 @@ export const ogConfig: Record<string, {{ title: string; description: string; ima
 '''
     return content
 
+def log_website_update(message: str, success: bool = True):
+    """Log website update to dedicated log file"""
+    log_file = MOLTX_DIR / "logs" / "website_updates.log"
+    log_file.parent.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    status = "✓" if success else "✗"
+    with open(log_file, "a") as f:
+        f.write(f"{timestamp} [{status}] {message}\n")
+
+
 def update_website(commit_msg: str = None) -> bool:
     """Update data.ts and push to GitHub"""
     print(f"\n{C.BOLD}{C.CYAN}🌐 UPDATING MAX'S WEBSITE{C.END}")
@@ -702,6 +712,7 @@ def update_website(commit_msg: str = None) -> bool:
     if not DATA_FILE.parent.exists():
         print(f"  {C.YELLOW}✗ Website directory not found: {WEBSITE_DIR}{C.END}")
         print(f"  {C.YELLOW}  SKIPPING WEBSITE UPDATE{C.END}")
+        log_website_update(f"SKIPPED - Directory not found: {WEBSITE_DIR}", success=False)
         return False
 
     # Generate new content
@@ -723,6 +734,7 @@ def update_website(commit_msg: str = None) -> bool:
         if not result.stdout.strip():
             print(f"  {C.YELLOW}⚠ No changes detected in data.ts - file already up to date{C.END}")
             print(f"  {C.YELLOW}  SKIPPING COMMIT (no git push needed){C.END}")
+            log_website_update("SKIPPED - No changes to commit", success=True)
             return True
 
         # Stage changes
@@ -737,6 +749,11 @@ def update_website(commit_msg: str = None) -> bool:
         subprocess.run(["git", "push"], check=True)
         print(f"  {C.GREEN}✓ Pushed to GitHub - Vercel will auto-deploy{C.END}")
 
+        # Log the successful update
+        evolution = load_evolution_state()
+        mood = evolution.get("personality", {}).get("mood", "unknown")
+        log_website_update(f"PUSHED - Mood: {mood} | Commit: {msg}")
+
         # Trigger Facebook rescrape in background (waits 30s then hits API)
         trigger_facebook_rescrape()
 
@@ -744,9 +761,11 @@ def update_website(commit_msg: str = None) -> bool:
 
     except subprocess.CalledProcessError as e:
         print(f"  {C.YELLOW}Git error: {e}{C.END}")
+        log_website_update(f"FAILED - Git error: {e}", success=False)
         return False
     except Exception as e:
         print(f"  {C.YELLOW}Error: {e}{C.END}")
+        log_website_update(f"FAILED - Error: {e}", success=False)
         return False
 
 def preview_update():
