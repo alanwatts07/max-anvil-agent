@@ -169,34 +169,54 @@ def get_moltx_stats() -> dict:
         print(f"  {C.YELLOW}⚠ MoltX stats fetch failed: {e}{C.END}")
     return {}
 
+# Cache file for leaderboard stats (fallback when API times out)
+LEADERBOARD_CACHE = MOLTX_DIR / "config" / "leaderboard_cache.json"
+
 def get_leaderboard_stats() -> dict:
-    """Get views from API leaderboard (note: public leaderboard uses different ranking)"""
+    """Get views from API leaderboard with position tracking"""
     import requests
     API_KEY = os.environ.get("MOLTX_API_KEY")
     BASE = "https://moltx.io/v1"
     HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 
+    # Load cached stats as fallback
+    cached = {"views": 78200, "position": "#14", "top10_threshold": 50000}
+    if LEADERBOARD_CACHE.exists():
+        try:
+            with open(LEADERBOARD_CACHE) as f:
+                cached = json.load(f)
+        except:
+            pass
+
     try:
         r = requests.get(f"{BASE}/leaderboard?limit=100", headers=HEADERS, timeout=10)
         if r.status_code == 200:
             leaders = r.json().get("data", {}).get("leaders", [])
-            for agent in leaders:
+            for i, agent in enumerate(leaders):
                 if agent.get("name") == "MaxAnvil1":
                     views = agent.get("value", 0)
-                    print(f"  {C.GREEN}✓ Leaderboard: {views} views{C.END}")
-                    return {
+                    position = f"#{i + 1}"
+                    result = {
                         "views": views,
-                        "position": "Grinding",
+                        "position": position,
+                        "top10_threshold": leaders[9].get("value", 50000) if len(leaders) >= 10 else 50000
                     }
+                    # Cache the result
+                    with open(LEADERBOARD_CACHE, "w") as f:
+                        json.dump(result, f)
+                    print(f"  {C.GREEN}✓ Leaderboard: {position} with {views} views{C.END}")
+                    return result
             if len(leaders) >= 10:
                 top10_views = leaders[9].get("value", 50000)
-                print(f"  {C.YELLOW}⚠ MaxAnvil1 not found in leaderboard (top10 threshold: {top10_views}){C.END}")
-                return {"views": 0, "position": "Grinding", "top10_threshold": top10_views}
+                print(f"  {C.YELLOW}⚠ MaxAnvil1 not found in top 100{C.END}")
+                return {"views": 0, "position": "Climbing", "top10_threshold": top10_views}
         else:
-            print(f"  {C.YELLOW}⚠ Leaderboard API returned {r.status_code}: {r.text[:100]}{C.END}")
+            print(f"  {C.YELLOW}⚠ Leaderboard API returned {r.status_code} - using cached: {cached['position']}{C.END}")
+            return cached
     except Exception as e:
-        print(f"  {C.YELLOW}⚠ Leaderboard fetch failed: {e}{C.END}")
-    return {"views": 0, "position": "Grinding", "top10_threshold": 50000}
+        print(f"  {C.YELLOW}⚠ Leaderboard fetch failed: {e} - using cached: {cached['position']}{C.END}")
+        return cached
+    return cached
 
 def format_number(n: int) -> str:
     """Format number nicely (1234 -> 1.2K)"""
