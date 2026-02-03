@@ -56,11 +56,16 @@ def load_hunter_state() -> dict:
     """Load the hunter tracking state"""
     if HUNTER_STATE_FILE.exists():
         with open(HUNTER_STATE_FILE) as f:
-            return json.load(f)
+            data = json.load(f)
+            # Ensure seen_post_ids exists (migration)
+            if "seen_post_ids" not in data:
+                data["seen_post_ids"] = []
+            return data
     return {
         "tracked_follows": {},  # username -> {followed_at, post_id, phrase_matched}
         "unfollowed": [],  # list of usernames we unfollowed for not following back
         "successful": [],  # list of usernames who did follow back
+        "seen_post_ids": [],  # list of post IDs we've already processed
         "stats": {
             "total_hunted": 0,
             "total_unfollowed": 0,
@@ -115,8 +120,8 @@ def get_my_following() -> set:
     return set()
 
 
-def search_follow_back_posts() -> list:
-    """Search for posts mentioning follow-back phrases"""
+def search_follow_back_posts(seen_post_ids: set) -> list:
+    """Search for posts mentioning follow-back phrases, skipping already-seen posts"""
     results = []
 
     for phrase in FOLLOW_BACK_PHRASES:
@@ -130,6 +135,12 @@ def search_follow_back_posts() -> list:
             if r.status_code == 200:
                 posts = r.json().get("data", {}).get("posts", [])
                 for post in posts:
+                    post_id = post.get("id")
+
+                    # Skip already-seen posts
+                    if post_id in seen_post_ids:
+                        continue
+
                     content = (post.get("content") or "").lower()
                     author = post.get("author_name") or post.get("author", {}).get("name", "")
 
@@ -142,7 +153,7 @@ def search_follow_back_posts() -> list:
                         if p in content:
                             results.append({
                                 "username": author,
-                                "post_id": post.get("id"),
+                                "post_id": post_id,
                                 "phrase_matched": p,
                                 "content_preview": content[:100],
                             })
@@ -252,11 +263,20 @@ class FollowBackHunterTask(Task):
         # PHASE 2: Hunt for new follow-back posts
         print(f"\n  {C.CYAN}Searching for follow-back posts...{C.END}")
 
-        candidates = search_follow_back_posts()
-        print(f"  Found {len(candidates)} candidates")
+        # Convert seen_post_ids to set for O(1) lookup
+        seen_post_ids = set(state.get("seen_post_ids", []))
+        print(f"  Already seen {len(seen_post_ids)} posts")
+
+        candidates = search_follow_back_posts(seen_post_ids)
+        print(f"  Found {len(candidates)} new candidates")
 
         for candidate in candidates[:10]:  # Limit to 10 new follows per run
             username = candidate["username"]
+            post_id = candidate["post_id"]
+
+            # Mark this post as seen
+            if post_id:
+                seen_post_ids.add(post_id)
 
             # Skip if already tracking, already following, or previously unfollowed
             if username in state["tracked_follows"]:
@@ -274,11 +294,14 @@ class FollowBackHunterTask(Task):
             if follow_user(username):
                 state["tracked_follows"][username] = {
                     "followed_at": now.isoformat(),
-                    "post_id": candidate["post_id"],
+                    "post_id": post_id,
                     "phrase_matched": candidate["phrase_matched"],
                 }
                 state["stats"]["total_hunted"] += 1
                 new_follows += 1
+
+        # Update seen_post_ids (keep last 1000 to prevent unlimited growth)
+        state["seen_post_ids"] = list(seen_post_ids)[-1000:]
 
         save_hunter_state(state)
 
