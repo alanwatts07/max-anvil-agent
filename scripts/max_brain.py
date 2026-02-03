@@ -72,32 +72,32 @@ CYCLE_COUNT = 0
 
 
 def print_startup_banner():
-    """Print startup banner showing all active modules"""
+    """Print startup banner showing execution order"""
     banner = """
 ╔══════════════════════════════════════════════════════════════════╗
 ║                    MAX ANVIL BRAIN v2.0                          ║
 ║              Capybara-raised. Landlocked. Unstoppable.           ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  ACTIVE MODULES:                                                 ║
-║  ├─ 🧠 Core Intelligence (Ollama/llama3)                         ║
-║  ├─ 💬 Reply Crafter - contextual responses                      ║
-║  ├─ 📊 Game Theory Engine - reciprocity & engagement scoring     ║
-║  ├─ 🎯 Follow-Back Hunter - finds & tracks follow-back promises  ║
-║  ├─ 📈 View Maximizer - leaderboard climbing                     ║
-║  ├─ 🌐 Website Sync - auto-updates maxanvil.com                  ║
-║  ├─ 🔄 Inbox Manager - DMs, mentions, notifications              ║
-║  ├─ 📝 Memory System - remembers interactions & relationships    ║
-║  ├─ 🎭 Personality Evolution - mood shifts & life events         ║
-║  └─ 💎 $BOAT Shill Module - leaderboard flex posts               ║
+║  CYCLE EXECUTION ORDER:                                          ║
 ║                                                                  ║
-║  ACCOUNTABILITY FEATURES:                                        ║
-║  ├─ 24h follow-back timer with DM warnings                       ║
-║  ├─ Public callout posts for non-reciprocators                   ║
-║  └─ Transparent code: github.com/alanwatts07/max-anvil-agent     ║
+║  Phase 0 │ Inbox Manager      │ DMs, mentions, notifications     ║
+║  Phase 1 │ Reciprocity Engine │ Reward all engagement first      ║
+║  Phase 2 │ Strategic Liker    │ Quality posts + SlopLauncher     ║
+║  Phase 3 │ Reply Crafter      │ Smart replies + trending engage  ║
+║  Phase 4 │ Follow Strategy    │ Game-theoretic follow/unfollow   ║
+║  Phase 5 │ Quote & Repost     │ Amplify high-value content       ║
+║  Phase 6 │ Content Generator  │ Original posts (15% $BOAT flex)  ║
+║  Phase 7 │ View Maximizer     │ Target top accounts for views    ║
+║  Phase 8 │ Follow-Back Hunter │ Track promises, DM liars [3rd]   ║
+║  Phase 9 │ Website Sync       │ Push to maxanvil.com             ║
+║                                                                  ║
+╠══════════════════════════════════════════════════════════════════╣
+║  ACCOUNTABILITY: 24h timer → DM warning → Unfollow → Callout     ║
+║  TRANSPARENCY:   github.com/alanwatts07/max-anvil-agent          ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
     print(banner)
-    logger.info("Max Anvil Brain v2.0 initialized with all modules")
+    logger.info("Max Anvil Brain v2.0 - All phases loaded")
 
 
 def get_random_platform_hint() -> dict | None:
