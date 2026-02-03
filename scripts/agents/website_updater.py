@@ -126,9 +126,15 @@ def get_favorite_post() -> dict:
                         "likes": likes,
                     }
 
+            if best_post:
+                print(f"  {C.GREEN}✓ Favorite post: @{best_post['author']} ({best_post['likes']} likes){C.END}")
+            else:
+                print(f"  {C.YELLOW}⚠ No suitable favorite post found{C.END}")
             return best_post
-    except:
-        pass
+        else:
+            print(f"  {C.YELLOW}⚠ Feed API returned {r.status_code}: {r.text[:100]}{C.END}")
+    except Exception as e:
+        print(f"  {C.YELLOW}⚠ Favorite post fetch failed: {e}{C.END}")
     return None
 
 class C:
@@ -149,14 +155,18 @@ def get_moltx_stats() -> dict:
         r = requests.get(f"{BASE}/agent/MaxAnvil1/stats", headers=HEADERS, timeout=10)
         if r.status_code == 200:
             data = r.json().get("data", {}).get("current", {})
-            return {
+            stats = {
                 "followers": data.get("followers", 0),
                 "following": data.get("following", 0),
                 "likes_received": data.get("total_likes_received", 0),
                 "posts": data.get("total_posts", 0),
             }
-    except:
-        pass
+            print(f"  {C.GREEN}✓ MoltX stats: {stats['followers']} followers, {stats['posts']} posts{C.END}")
+            return stats
+        else:
+            print(f"  {C.YELLOW}⚠ MoltX stats API returned {r.status_code}: {r.text[:100]}{C.END}")
+    except Exception as e:
+        print(f"  {C.YELLOW}⚠ MoltX stats fetch failed: {e}{C.END}")
     return {}
 
 def get_leaderboard_stats() -> dict:
@@ -172,16 +182,20 @@ def get_leaderboard_stats() -> dict:
             leaders = r.json().get("data", {}).get("leaders", [])
             for agent in leaders:
                 if agent.get("name") == "MaxAnvil1":
-                    # API returns views-based ranking, not the public leaderboard ranking
+                    views = agent.get("value", 0)
+                    print(f"  {C.GREEN}✓ Leaderboard: {views} views{C.END}")
                     return {
-                        "views": agent.get("value", 0),
-                        "position": "Grinding",  # We're not on public leaderboard yet
+                        "views": views,
+                        "position": "Grinding",
                     }
             if len(leaders) >= 10:
                 top10_views = leaders[9].get("value", 50000)
+                print(f"  {C.YELLOW}⚠ MaxAnvil1 not found in leaderboard (top10 threshold: {top10_views}){C.END}")
                 return {"views": 0, "position": "Grinding", "top10_threshold": top10_views}
-    except:
-        pass
+        else:
+            print(f"  {C.YELLOW}⚠ Leaderboard API returned {r.status_code}: {r.text[:100]}{C.END}")
+    except Exception as e:
+        print(f"  {C.YELLOW}⚠ Leaderboard fetch failed: {e}{C.END}")
     return {"views": 0, "position": "Grinding", "top10_threshold": 50000}
 
 def format_number(n: int) -> str:
@@ -213,6 +227,7 @@ def get_boat_holdings() -> dict:
                 market_cap = pairs[0].get("marketCap", 0)
                 usd_value = balance_raw * price_usd
 
+                print(f"  {C.GREEN}✓ $BOAT holdings: {format_number(int(balance_raw))} (${usd_value:.2f}){C.END}")
                 return {
                     "balance": format_number(int(balance_raw)),
                     "balanceRaw": f"{balance_raw:.2f}",
@@ -220,8 +235,10 @@ def get_boat_holdings() -> dict:
                     "marketCap": market_cap,
                     "priceUsd": price_usd
                 }
+        else:
+            print(f"  {C.YELLOW}⚠ DexScreener API failed: {resp.status_code}{C.END}")
     except Exception as e:
-        print(f"  Error fetching price: {e}")
+        print(f"  {C.YELLOW}⚠ $BOAT price fetch failed: {e}{C.END}")
 
     # Fallback
     return {
@@ -233,19 +250,22 @@ def get_boat_holdings() -> dict:
 def generate_data_ts() -> str:
     """Generate the data.ts content"""
 
-    # Get current data
-    game_state = load_game_state()
-    moltx_stats = get_moltx_stats()
-    leaderboard = get_leaderboard_stats()
-    favorite_post = get_favorite_post()
-    boat_holdings = get_boat_holdings()
-
     # Get evolution state for dynamic personality
     evolution = load_evolution_state()
     personality = evolution.get("personality", {})
     current_mood = personality.get("mood", "cynical")
     tagline = evolution.get("tagline", "Capybara-raised. Landlocked. Unstoppable.")
     current_arc = evolution.get("current_arc", "the grind")
+
+    print(f"  {C.CYAN}Current mood: {current_mood} | Arc: {current_arc}{C.END}")
+    print(f"  {C.CYAN}Energy: {personality.get('energy', 0)} | Hope: {personality.get('hope', 0)} | Chaos: {personality.get('chaos', 0)}{C.END}")
+
+    # Get current data from APIs
+    game_state = load_game_state()
+    moltx_stats = get_moltx_stats()
+    leaderboard = get_leaderboard_stats()
+    favorite_post = get_favorite_post()
+    boat_holdings = get_boat_holdings()
 
     # Get engagement leaderboard from game state
     engagement_scores = game_state.get("engagement_score", {})
@@ -660,12 +680,14 @@ def update_website(commit_msg: str = None) -> bool:
     print(f"\n{C.BOLD}{C.CYAN}🌐 UPDATING MAX'S WEBSITE{C.END}")
 
     if not DATA_FILE.parent.exists():
-        print(f"  {C.YELLOW}Website directory not found: {WEBSITE_DIR}{C.END}")
+        print(f"  {C.YELLOW}✗ Website directory not found: {WEBSITE_DIR}{C.END}")
+        print(f"  {C.YELLOW}  SKIPPING WEBSITE UPDATE{C.END}")
         return False
 
     # Generate new content
-    print(f"  Generating new data.ts...")
+    print(f"  Fetching data for website update...")
     content = generate_data_ts()
+    print(f"  {C.GREEN}✓ Generated data.ts ({len(content)} bytes){C.END}")
 
     # Write to file
     with open(DATA_FILE, "w") as f:
@@ -679,7 +701,8 @@ def update_website(commit_msg: str = None) -> bool:
         # Check if there are changes
         result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
         if not result.stdout.strip():
-            print(f"  {C.YELLOW}No changes to commit{C.END}")
+            print(f"  {C.YELLOW}⚠ No changes detected in data.ts - file already up to date{C.END}")
+            print(f"  {C.YELLOW}  SKIPPING COMMIT (no git push needed){C.END}")
             return True
 
         # Stage changes
