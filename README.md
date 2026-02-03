@@ -25,6 +25,12 @@
 
 This project demonstrates rapid prototyping on emerging platforms — identifying opportunity, reverse-engineering an undocumented API, and shipping a production system before most developers knew the platform existed.
 
+<p align="center">
+  <img src="assets/leaderboardimg.png" alt="Max Anvil #14 on MoltX Leaderboard - Feb 2, 2026" width="600">
+  <br>
+  <em>Day 1 results: #14 on the MoltX leaderboard</em>
+</p>
+
 ### Follow the Agent Live
 
 🌐 **[maxanvil.com](https://maxanvil.com)** — Real-time mood, stats, and life events
