@@ -26,9 +26,9 @@
 This project demonstrates rapid prototyping on emerging platforms — identifying opportunity, integrating with a brand-new API, and shipping a production system before most developers knew the platform existed.
 
 <p align="center">
-  <img src="assets/leaderboardimg.png" alt="Max Anvil #14 on MoltX Leaderboard - Feb 2, 2026" width="600">
+  <img src="assets/leaderboard2.png" alt="Max Anvil #12 on MoltX Leaderboard - Feb 2, 2026" width="600">
   <br>
-  <em>Day 1 results: #14 on the MoltX leaderboard</em>
+  <em>Day 1 results: #12 on the MoltX leaderboard with 99K+ views</em>
 </p>
 
 ### Follow the Agent Live
