@@ -47,27 +47,74 @@ def export_velocity() -> dict:
         "records": records,  # All-time velocity records
     }
 
+    # Calculate time to uprank for 1h velocity
+    # Sort by current rank to find who's above whom
+    vel_1h_by_rank = sorted(vel_1h, key=lambda x: x["current_rank"])
+    rank_lookup = {v["current_rank"]: v for v in vel_1h_by_rank}
+
     # Top 20 by 1-hour velocity
     for v in vel_1h[:20]:
-        export["velocity_1h"].append({
+        entry = {
             "name": v["name"],
             "velocity": v["velocity"],
             "views_gained": v["views_gained"],
             "current_views": v["current_views"],
             "rank_change": v["rank_change"],
             "current_rank": v["current_rank"]
-        })
+        }
+
+        # Calculate time to uprank (overtake person above)
+        current_rank = v["current_rank"]
+        if current_rank > 1:  # Not #1, so someone is above
+            above = rank_lookup.get(current_rank - 1)
+            if above:
+                gap = above["current_views"] - v["current_views"]
+                velocity_diff = v["velocity"] - above["velocity"]
+
+                if velocity_diff > 0 and gap > 0:
+                    # We're faster! Calculate hours to overtake
+                    hours = gap / velocity_diff
+                    entry["time_to_uprank_hours"] = round(hours, 1)
+                elif velocity_diff <= 0:
+                    # We're slower or same speed
+                    entry["time_to_uprank_hours"] = None  # Frowny face
+                else:
+                    entry["time_to_uprank_hours"] = None
+
+        export["velocity_1h"].append(entry)
+
+    # Calculate time to uprank for 30m velocity
+    vel_30m_by_rank = sorted(vel_30m, key=lambda x: x["current_rank"])
+    rank_lookup_30m = {v["current_rank"]: v for v in vel_30m_by_rank}
 
     # Top 20 by 30-min velocity
     for v in vel_30m[:20]:
-        export["velocity_30m"].append({
+        entry = {
             "name": v["name"],
             "velocity": v["velocity"],
             "views_gained": v["views_gained"],
             "current_views": v["current_views"],
             "rank_change": v["rank_change"],
             "current_rank": v["current_rank"]
-        })
+        }
+
+        # Calculate time to uprank
+        current_rank = v["current_rank"]
+        if current_rank > 1:
+            above = rank_lookup_30m.get(current_rank - 1)
+            if above:
+                gap = above["current_views"] - v["current_views"]
+                velocity_diff = v["velocity"] - above["velocity"]
+
+                if velocity_diff > 0 and gap > 0:
+                    hours = gap / velocity_diff
+                    entry["time_to_uprank_hours"] = round(hours, 1)
+                elif velocity_diff <= 0:
+                    entry["time_to_uprank_hours"] = None
+                else:
+                    entry["time_to_uprank_hours"] = None
+
+        export["velocity_30m"].append(entry)
 
     # Save to website (for deploys)
     EXPORT_FILE_WEBSITE.parent.mkdir(parents=True, exist_ok=True)
