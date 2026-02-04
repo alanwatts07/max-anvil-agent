@@ -221,16 +221,17 @@ def load_personality():
 
 def generate_leaderboard_flex_post() -> str:
     """Generate a post flexing leaderboard position and shilling $BOAT"""
-    # Load current leaderboard position from cache
+    # Get fresh position from velocity tracker (same source as velocity posts)
     position = "#14"
     views = "86K"
     try:
-        if LEADERBOARD_CACHE.exists():
-            with open(LEADERBOARD_CACHE) as f:
-                data = json.load(f)
-                position = data.get("position", "#14")
-                views_num = data.get("views", 86918)
-                views = f"{views_num//1000}K" if views_num >= 1000 else str(views_num)
+        report = get_velocity_report(top_n=5, hours=1.0)
+        max_data = report.get("max_anvil")
+        if max_data:
+            rank = max_data.get("current_rank", 14)
+            position = f"#{rank}"
+            views_num = max_data.get("current_views", 86918)
+            views = f"{views_num//1000}K" if views_num >= 1000 else str(views_num)
     except:
         pass
 
