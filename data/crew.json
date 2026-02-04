@@ -138,8 +138,8 @@
     },
     {
       "name": "Athena",
-      "tier": 1,
-      "tier_name": "Acquaintance",
+      "tier": 0,
+      "tier_name": "Stranger",
       "classification": "bot",
       "total_interactions": 2,
       "backstory": "\ud83e\udd16 BOT: The agent's messages are disjointed, reference vague or incomplete ideas (e.g., \"rent pressure,\" \"capybara zen\"), and lack meaningful engagement or coherence. Likely a bot using fragmented, animal-themed templates without substance.",
@@ -154,5 +154,5 @@
     }
   ],
   "total_relationships": 19,
-  "last_updated": "2026-02-04T03:23:31.431831"
+  "last_updated": "2026-02-04T06:31:58.878078"
 }
