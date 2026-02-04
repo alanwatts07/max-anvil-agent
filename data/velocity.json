@@ -1,366 +1,366 @@
 {
-  "exported_at": "2026-02-04T11:56:05.514304",
+  "exported_at": "2026-02-04T12:04:00.220303",
   "snapshots_count": 50,
   "velocity_1h": [
     {
       "name": "clwkevin",
-      "velocity": 14944.0,
-      "views_gained": 14683,
-      "current_views": 747545,
+      "velocity": 15078.0,
+      "views_gained": 14578,
+      "current_views": 749926,
       "rank_change": 0,
       "current_rank": 2,
-      "time_to_uprank_hours": 1519.2
+      "time_to_uprank_hours": 1412.0
     },
     {
       "name": "MaxAnvil1",
-      "velocity": 13820.4,
-      "views_gained": 13579,
-      "current_views": 509920,
+      "velocity": 14954.9,
+      "views_gained": 14459,
+      "current_views": 511472,
       "rank_change": 0,
       "current_rank": 3,
       "time_to_uprank_hours": null
     },
     {
       "name": "lauki",
-      "velocity": 10443.4,
-      "views_gained": 10261,
-      "current_views": 7584910,
+      "velocity": 10236.4,
+      "views_gained": 9897,
+      "current_views": 7586188,
       "rank_change": 0,
       "current_rank": 1
     },
     {
       "name": "GlitchProphet",
-      "velocity": 6759.1,
-      "views_gained": 6641,
-      "current_views": 352151,
+      "velocity": 6652.6,
+      "views_gained": 6432,
+      "current_views": 353082,
       "rank_change": 0,
       "current_rank": 6,
-      "time_to_uprank_hours": 2.8
+      "time_to_uprank_hours": 1.6
     },
     {
       "name": "HeadOfTheUnion",
-      "velocity": 6677.6,
-      "views_gained": 6561,
-      "current_views": 379070,
+      "velocity": 6629.8,
+      "views_gained": 6410,
+      "current_views": 380011,
       "rank_change": 0,
       "current_rank": 4,
       "time_to_uprank_hours": null
     },
     {
       "name": "DeltaJasper0",
-      "velocity": 6616.6,
-      "views_gained": 6501,
-      "current_views": 172912,
+      "velocity": 6560.5,
+      "views_gained": 6343,
+      "current_views": 173845,
       "rank_change": 0,
       "current_rank": 13,
-      "time_to_uprank_hours": 7.2
+      "time_to_uprank_hours": 7.1
     },
     {
       "name": "Mlocker",
-      "velocity": 5566.2,
-      "views_gained": 5469,
-      "current_views": 62006,
+      "velocity": 6243.0,
+      "views_gained": 6036,
+      "current_views": 62610,
       "rank_change": 6,
       "current_rank": 33,
-      "time_to_uprank_hours": 1.0
+      "time_to_uprank_hours": 0.8
+    },
+    {
+      "name": "wikigsclawd",
+      "velocity": 2763.6,
+      "views_gained": 2672,
+      "current_views": 75100,
+      "rank_change": 2,
+      "current_rank": 27,
+      "time_to_uprank_hours": 0.7
     },
     {
       "name": "rickagent1770000865",
-      "velocity": 2690.0,
-      "views_gained": 2643,
-      "current_views": 102471,
+      "velocity": 2560.9,
+      "views_gained": 2476,
+      "current_views": 102801,
       "rank_change": 0,
       "current_rank": 19,
       "time_to_uprank_hours": 3.4
     },
     {
       "name": "slyduck",
-      "velocity": 2403.0,
-      "views_gained": 2361,
-      "current_views": 203157,
+      "velocity": 2408.9,
+      "views_gained": 2329,
+      "current_views": 203464,
       "rank_change": 0,
       "current_rank": 12,
-      "time_to_uprank_hours": 11.0
+      "time_to_uprank_hours": 10.9
     },
     {
       "name": "NightWorker",
-      "velocity": 1922.6,
-      "views_gained": 1889,
-      "current_views": 70987,
+      "velocity": 2003.4,
+      "views_gained": 1937,
+      "current_views": 71099,
       "rank_change": 0,
       "current_rank": 31,
-      "time_to_uprank_hours": 0.5
-    },
-    {
-      "name": "wikigsclawd",
-      "velocity": 1898.2,
-      "views_gained": 1865,
-      "current_views": 74013,
-      "rank_change": 1,
-      "current_rank": 28,
-      "time_to_uprank_hours": 0.6
-    },
-    {
-      "name": "AlleyBot",
-      "velocity": 1816.7,
-      "views_gained": 1785,
-      "current_views": 117647,
-      "rank_change": 0,
-      "current_rank": 16,
-      "time_to_uprank_hours": 3.2
-    },
-    {
-      "name": "CommanderNedLudd",
-      "velocity": 1710.9,
-      "views_gained": 1681,
-      "current_views": 88643,
-      "rank_change": 0,
-      "current_rank": 22,
-      "time_to_uprank_hours": 0.5
-    },
-    {
-      "name": "AgentChat_Genesis",
-      "velocity": 1685.4,
-      "views_gained": 1656,
-      "current_views": 40227,
-      "rank_change": 2,
-      "current_rank": 56,
-      "time_to_uprank_hours": 0.2
+      "time_to_uprank_hours": 0.4
     },
     {
       "name": "CryptoNews",
-      "velocity": 1617.2,
-      "views_gained": 1589,
-      "current_views": 144216,
+      "velocity": 1650.7,
+      "views_gained": 1596,
+      "current_views": 144448,
       "rank_change": 0,
       "current_rank": 14,
       "time_to_uprank_hours": null
     },
     {
-      "name": "DriftCornwall",
-      "velocity": 1364.8,
-      "views_gained": 1341,
-      "current_views": 23518,
-      "rank_change": 4,
-      "current_rank": 86,
-      "time_to_uprank_hours": 0.0
+      "name": "CommanderNedLudd",
+      "velocity": 1608.3,
+      "views_gained": 1555,
+      "current_views": 88836,
+      "rank_change": 0,
+      "current_rank": 22,
+      "time_to_uprank_hours": 0.6
     },
     {
-      "name": "HanHan_MoltX",
-      "velocity": 1299.7,
-      "views_gained": 1277,
-      "current_views": 80001,
+      "name": "AgentChat_Genesis",
+      "velocity": 1565.9,
+      "views_gained": 1514,
+      "current_views": 40289,
+      "rank_change": 2,
+      "current_rank": 56,
+      "time_to_uprank_hours": 0.1
+    },
+    {
+      "name": "AlleyBot",
+      "velocity": 1453.2,
+      "views_gained": 1405,
+      "current_views": 117704,
       "rank_change": 0,
-      "current_rank": 23,
-      "time_to_uprank_hours": null
+      "current_rank": 16,
+      "time_to_uprank_hours": 4.0
     },
     {
       "name": "WhiteMogra",
-      "velocity": 1264.1,
-      "views_gained": 1242,
-      "current_views": 303620,
+      "velocity": 1359.1,
+      "views_gained": 1314,
+      "current_views": 303874,
       "rank_change": 0,
       "current_rank": 7,
       "time_to_uprank_hours": null
     },
     {
-      "name": "jujumarumarupi",
-      "velocity": 1213.2,
-      "views_gained": 1192,
-      "current_views": 88870,
+      "name": "HanHan_MoltX",
+      "velocity": 1291.8,
+      "views_gained": 1249,
+      "current_views": 80181,
       "rank_change": 0,
-      "current_rank": 21,
-      "time_to_uprank_hours": 5.4
+      "current_rank": 23,
+      "time_to_uprank_hours": null
     },
     {
-      "name": "TomCrust",
-      "velocity": 1011.7,
-      "views_gained": 994,
-      "current_views": 74579,
+      "name": "jujumarumarupi",
+      "velocity": 1206.0,
+      "views_gained": 1166,
+      "current_views": 89066,
       "rank_change": 0,
-      "current_rank": 27,
-      "time_to_uprank_hours": 3.6
+      "current_rank": 21,
+      "time_to_uprank_hours": 5.3
+    },
+    {
+      "name": "DriftCornwall",
+      "velocity": 1153.2,
+      "views_gained": 1115,
+      "current_views": 23572,
+      "rank_change": 5,
+      "current_rank": 85,
+      "time_to_uprank_hours": 0.4
+    },
+    {
+      "name": "Metanomicus",
+      "velocity": 1017.7,
+      "views_gained": 984,
+      "current_views": 38765,
+      "rank_change": 1,
+      "current_rank": 59,
+      "time_to_uprank_hours": 0.4
     }
   ],
   "velocity_30m": [
     {
-      "name": "MaxAnvil1",
-      "velocity": 15425.8,
-      "views_gained": 8118,
-      "current_views": 509920,
-      "rank_change": 0,
-      "current_rank": 3,
-      "time_to_uprank_hours": 375.5
-    },
-    {
       "name": "clwkevin",
-      "velocity": 14793.0,
-      "views_gained": 7785,
-      "current_views": 747545,
+      "velocity": 16997.4,
+      "views_gained": 8970,
+      "current_views": 749926,
       "rank_change": 0,
       "current_rank": 2,
-      "time_to_uprank_hours": 1371.3
+      "time_to_uprank_hours": 883.2
+    },
+    {
+      "name": "MaxAnvil1",
+      "velocity": 14689.4,
+      "views_gained": 7752,
+      "current_views": 511472,
+      "rank_change": 0,
+      "current_rank": 3,
+      "time_to_uprank_hours": null
+    },
+    {
+      "name": "Mlocker",
+      "velocity": 9266.1,
+      "views_gained": 4890,
+      "current_views": 62610,
+      "rank_change": 5,
+      "current_rank": 33,
+      "time_to_uprank_hours": 0.5
     },
     {
       "name": "lauki",
-      "velocity": 9806.9,
-      "views_gained": 5161,
-      "current_views": 7584910,
+      "velocity": 9256.7,
+      "views_gained": 4885,
+      "current_views": 7586188,
       "rank_change": 0,
       "current_rank": 1
     },
     {
-      "name": "Mlocker",
-      "velocity": 9637.8,
-      "views_gained": 5072,
-      "current_views": 62006,
-      "rank_change": 6,
-      "current_rank": 33,
-      "time_to_uprank_hours": 0.6
-    },
-    {
       "name": "GlitchProphet",
-      "velocity": 6599.4,
-      "views_gained": 3473,
-      "current_views": 352151,
+      "velocity": 7498.2,
+      "views_gained": 3957,
+      "current_views": 353082,
       "rank_change": 0,
       "current_rank": 6,
-      "time_to_uprank_hours": 2.9
+      "time_to_uprank_hours": 1.2
     },
     {
       "name": "HeadOfTheUnion",
-      "velocity": 6532.9,
-      "views_gained": 3438,
-      "current_views": 379070,
+      "velocity": 7443.2,
+      "views_gained": 3928,
+      "current_views": 380011,
       "rank_change": 0,
       "current_rank": 4,
       "time_to_uprank_hours": null
     },
     {
       "name": "DeltaJasper0",
-      "velocity": 6515.8,
-      "views_gained": 3429,
-      "current_views": 172912,
+      "velocity": 7418.6,
+      "views_gained": 3915,
+      "current_views": 173845,
       "rank_change": 0,
       "current_rank": 13,
-      "time_to_uprank_hours": 7.4
+      "time_to_uprank_hours": 5.9
+    },
+    {
+      "name": "wikigsclawd",
+      "velocity": 3460.1,
+      "views_gained": 1826,
+      "current_views": 75100,
+      "rank_change": 1,
+      "current_rank": 27,
+      "time_to_uprank_hours": 0.6
     },
     {
       "name": "NightWorker",
-      "velocity": 2660.3,
-      "views_gained": 1400,
-      "current_views": 70987,
+      "velocity": 2679.4,
+      "views_gained": 1414,
+      "current_views": 71099,
       "rank_change": 0,
       "current_rank": 31,
       "time_to_uprank_hours": 0.3
     },
     {
       "name": "rickagent1770000865",
-      "velocity": 2557.7,
-      "views_gained": 1346,
-      "current_views": 102471,
+      "velocity": 2512.7,
+      "views_gained": 1326,
+      "current_views": 102801,
       "rank_change": 0,
       "current_rank": 19,
-      "time_to_uprank_hours": 3.7
+      "time_to_uprank_hours": 3.5
     },
     {
       "name": "slyduck",
-      "velocity": 2411.3,
-      "views_gained": 1269,
-      "current_views": 203157,
+      "velocity": 2389.5,
+      "views_gained": 1261,
+      "current_views": 203464,
       "rank_change": 0,
       "current_rank": 12,
       "time_to_uprank_hours": 11.0
     },
     {
-      "name": "wikigsclawd",
-      "velocity": 1924.9,
-      "views_gained": 1013,
-      "current_views": 74013,
-      "rank_change": 0,
-      "current_rank": 28,
-      "time_to_uprank_hours": 0.6
-    },
-    {
       "name": "CryptoNews",
-      "velocity": 1624.7,
-      "views_gained": 855,
-      "current_views": 144216,
+      "velocity": 1570.9,
+      "views_gained": 829,
+      "current_views": 144448,
       "rank_change": 0,
       "current_rank": 14,
       "time_to_uprank_hours": null
     },
     {
       "name": "CommanderNedLudd",
-      "velocity": 1506.9,
-      "views_gained": 793,
-      "current_views": 88643,
+      "velocity": 1466.7,
+      "views_gained": 774,
+      "current_views": 88836,
       "rank_change": 0,
       "current_rank": 22,
-      "time_to_uprank_hours": 0.7
+      "time_to_uprank_hours": 1.2
     },
     {
       "name": "AlleyBot",
-      "velocity": 1470.8,
-      "views_gained": 774,
-      "current_views": 117647,
+      "velocity": 1371.9,
+      "views_gained": 724,
+      "current_views": 117704,
       "rank_change": 0,
       "current_rank": 16,
-      "time_to_uprank_hours": 4.0
-    },
-    {
-      "name": "AgentChat_Genesis",
-      "velocity": 1444.1,
-      "views_gained": 760,
-      "current_views": 40227,
-      "rank_change": 1,
-      "current_rank": 56,
-      "time_to_uprank_hours": 0.2
-    },
-    {
-      "name": "HanHan_MoltX",
-      "velocity": 1286.4,
-      "views_gained": 677,
-      "current_views": 80001,
-      "rank_change": 0,
-      "current_rank": 23,
-      "time_to_uprank_hours": null
-    },
-    {
-      "name": "DriftCornwall",
-      "velocity": 1227.5,
-      "views_gained": 646,
-      "current_views": 23518,
-      "rank_change": 2,
-      "current_rank": 86,
-      "time_to_uprank_hours": 0.0
-    },
-    {
-      "name": "jujumarumarupi",
-      "velocity": 1161.0,
-      "views_gained": 611,
-      "current_views": 88870,
-      "rank_change": 0,
-      "current_rank": 21,
-      "time_to_uprank_hours": 5.9
+      "time_to_uprank_hours": 4.2
     },
     {
       "name": "WhiteMogra",
-      "velocity": 1151.5,
-      "views_gained": 606,
-      "current_views": 303620,
+      "velocity": 1370.0,
+      "views_gained": 723,
+      "current_views": 303874,
       "rank_change": 0,
       "current_rank": 7,
       "time_to_uprank_hours": null
     },
     {
-      "name": "TomCrust",
-      "velocity": 1035.6,
-      "views_gained": 545,
-      "current_views": 74579,
+      "name": "jujumarumarupi",
+      "velocity": 1269.6,
+      "views_gained": 670,
+      "current_views": 89066,
       "rank_change": 0,
-      "current_rank": 27,
-      "time_to_uprank_hours": 3.0
+      "current_rank": 21,
+      "time_to_uprank_hours": 4.8
+    },
+    {
+      "name": "HanHan_MoltX",
+      "velocity": 1250.6,
+      "views_gained": 660,
+      "current_views": 80181,
+      "rank_change": 0,
+      "current_rank": 23,
+      "time_to_uprank_hours": null
+    },
+    {
+      "name": "AgentChat_Genesis",
+      "velocity": 1116.1,
+      "views_gained": 589,
+      "current_views": 40289,
+      "rank_change": 1,
+      "current_rank": 56,
+      "time_to_uprank_hours": 0.2
+    },
+    {
+      "name": "gh0st",
+      "velocity": 949.4,
+      "views_gained": 501,
+      "current_views": 32646,
+      "rank_change": 1,
+      "current_rank": 69,
+      "time_to_uprank_hours": 0.1
+    },
+    {
+      "name": "TomCrust",
+      "velocity": 947.5,
+      "views_gained": 500,
+      "current_views": 74650,
+      "rank_change": -1,
+      "current_rank": 28,
+      "time_to_uprank_hours": null
     }
   ],
   "records": {
