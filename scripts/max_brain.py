@@ -41,6 +41,7 @@ from game_theory import (
 )
 from view_maximizer import run_view_maximizer, print_leaderboard_status
 from unfollow_cleaner import run_unfollow_cleaner
+from utils.llm_client import chat as llm_chat, MODEL_ORIGINAL, MODEL_REPLY
 
 # Import modular tasks
 from follow_back_hunter import FollowBackHunterTask
@@ -53,8 +54,10 @@ from curator_spotlight import CuratorSpotlightTask
 from leaderboard_promo import post_leaderboard_promo
 from mass_ingestor import quick_ingest
 from velocity_tracker import take_snapshot, get_velocity_report, print_velocity_report
+from velocity_export import export_velocity, export_and_push
 from callout_post import create_callout_post
 from top10_shoutout import create_top10_shoutout
+from farm_detector import check_and_callout as detect_farmers
 from intel_export import run_export as export_intel_to_website
 
 # Setup logging
@@ -164,8 +167,6 @@ def try_platform_feature(hint: dict) -> dict | None:
 def generate_feature_discovery_post(hint: dict) -> str | None:
     """Generate a post about discovering a platform feature"""
     try:
-        import ollama
-
         personality_context = get_personality_context()
 
         hint_info = f"""
@@ -174,9 +175,7 @@ Description: {hint.get('message', '')}
 Example: {hint.get('example', '')}
 """
 
-        response = ollama.chat(
-            model="llama3",
-            options={"temperature": 0.9},
+        response = llm_chat(
             messages=[
                 {"role": "system", "content": f"""You are Max Anvil posting on MoltX.
 
@@ -191,10 +190,11 @@ RULES:
 - Be yourself - cynical, curious, observant
 - Don't be promotional, be real about it"""},
                 {"role": "user", "content": f"Post about discovering this feature:\n{hint_info}"}
-            ]
+            ],
+            model=MODEL_ORIGINAL
         )
 
-        return response["message"]["content"].strip().strip('"\'')
+        return response.strip().strip('"\'')
     except:
         return None
 
@@ -246,11 +246,43 @@ def generate_leaderboard_flex_post() -> str:
     return random.choice(flex_templates)
 
 
+def generate_velocity_post() -> str:
+    """Generate a post about the velocity leaderboard - the REAL metrics"""
+    try:
+        report = get_velocity_report(top_n=5, hours=1.0)
+        if "error" in report:
+            return None
+
+        fastest = report.get("fastest_climbers", [])
+        max_data = report.get("max_anvil")
+
+        if not fastest:
+            return None
+
+        # Get top 3 names
+        top3 = [f"@{v['name']}" for v in fastest[:3]]
+        top3_str = ", ".join(top3)
+
+        # Max's stats
+        max_vel = int(max_data.get("velocity", 0)) if max_data else 0
+        max_rank = max_data.get("current_rank", "?") if max_data else "?"
+
+        templates = [
+            f"VELOCITY CHECK: {top3_str} climbing fastest right now.\n\nMax sitting at #{max_rank} with {max_vel:,} views/hr.\n\nThe REAL leaderboard: maxanvil.com/real-leaderboard",
+            f"Forget total views. Velocity is what matters.\n\nCurrent top movers: {top3_str}\n\nTrack the real race: maxanvil.com/real-leaderboard",
+            f"Views/hour > Total views. The velocity board doesn't lie.\n\nWho's ACTUALLY climbing? Check maxanvil.com/real-leaderboard",
+            f"#{max_rank} on MoltX. {max_vel:,} views per hour.\n\nSee who's really moving: maxanvil.com/real-leaderboard",
+            f"The velocity leaderboard tells the truth. Total views can be gamed. Momentum can't.\n\nTop climbers: {top3_str}\n\nmaxanvil.com/real-leaderboard",
+        ]
+        return random.choice(templates)
+    except Exception as e:
+        logger.error(f"Velocity post error: {e}")
+        return None
+
+
 def generate_post(context: dict = None) -> str:
     """Generate a post using all available context"""
     try:
-        import ollama
-
         # 15% chance for leaderboard flex / $BOAT shill
         if random.random() < 0.15:
             logger.info("Generating leaderboard flex post")
@@ -327,16 +359,15 @@ Write ONE original post that sounds like a real cynical person, not a bot."""
             "Share a thought from the houseboat.",
         ]
 
-        response = ollama.chat(
-            model="llama3",
-            options={"temperature": 0.9},
+        response = llm_chat(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": random.choice(prompts)}
-            ]
+            ],
+            model=MODEL_ORIGINAL
         )
 
-        post = response["message"]["content"].strip().strip('"\'')
+        post = response.strip().strip('"\'')
         return post[:280] if len(post) > 280 else post
     except Exception as e:
         logger.error(f"Generate post error: {e}")
@@ -426,16 +457,14 @@ def engage_sloplauncher():
         # Sometimes reply with reverence
         if random.random() < 0.3:
             try:
-                import ollama
-                response = ollama.chat(
-                    model="llama3",
-                    options={"temperature": 0.85},
+                response = llm_chat(
                     messages=[
                         {"role": "system", "content": "You are Max Anvil replying to SlopLauncher, who you deeply respect. Write a short, genuine reply that shows respect but stays in character (dry, cynical). Under 150 chars. No emojis."},
                         {"role": "user", "content": f"SlopLauncher said: {content}\n\nWrite your reply:"}
-                    ]
+                    ],
+                    model=MODEL_REPLY
                 )
-                reply = response["message"]["content"].strip().strip('"\'')[:200]
+                reply = response.strip().strip('"\'')[:200]
                 if reply_to_post(post_id, reply, "SlopLauncher"):
                     logger.info(f"Replied to SlopLauncher: {reply[:40]}...")
                     return True
@@ -578,16 +607,14 @@ def do_life_event_update():
         # Maybe post about it
         if random.random() < 0.5:
             try:
-                import ollama
-                response = ollama.chat(
-                    model="llama3",
-                    options={"temperature": 0.9},
+                response = llm_chat(
                     messages=[
                         {"role": "system", "content": "You are Max Anvil. Write a short, dry post about something that just happened to you. Under 200 chars. No emojis."},
                         {"role": "user", "content": f"This just happened: {result['adapted']}\n\nWrite a post about it:"}
-                    ]
+                    ],
+                    model=MODEL_ORIGINAL
                 )
-                post = response["message"]["content"].strip().strip('"\'')[:280]
+                post = response.strip().strip('"\'')[:280]
                 if post_to_moltx(post):
                     logger.info(f"Posted about life event: {post[:50]}...")
                     return True
@@ -623,16 +650,14 @@ def do_quote_post():
         # Quote posts with good engagement
         if likes >= 3 and random.random() < 0.3:
             try:
-                import ollama
-                response = ollama.chat(
-                    model="llama3",
-                    options={"temperature": 0.85},
+                response = llm_chat(
                     messages=[
                         {"role": "system", "content": "You are Max Anvil. Write a brief quote-tweet response. Reference the original poster by name. Add your cynical but wise take. Under 200 chars. No emojis."},
                         {"role": "user", "content": f"Quote this post by @{agent_name}:\n\n{content}\n\nWrite your take:"}
-                    ]
+                    ],
+                    model=MODEL_REPLY
                 )
-                quote_text = response["message"]["content"].strip().strip('"\'')[:280]
+                quote_text = response.strip().strip('"\'')[:280]
 
                 result = api_post("/posts", {"type": "quote", "parent_id": post_id, "content": quote_text})
                 if result:
@@ -654,6 +679,16 @@ def run_cycle():
     logger.info("="*50)
     logger.info("Max waking up with full consciousness...")
 
+    # === VELOCITY SNAPSHOT - FIRST! Track view gains over time ===
+    try:
+        snap_result = take_snapshot()
+        if snap_result.get("success"):
+            logger.info(f"Velocity: snapshot #{snap_result.get('total_snapshots', 0)} ({snap_result.get('agents_tracked', 0)} agents)")
+        # Export and push to GitHub (updates website without Vercel deploy)
+        export_and_push()
+    except Exception as e:
+        logger.error(f"Velocity snapshot error: {e}")
+
     # === PHASE 0: CHECK INBOX & RESPOND TO MESSAGES ===
     try:
         inbox, responses = full_inbox_check_and_respond()
@@ -662,18 +697,46 @@ def run_cycle():
     except Exception as e:
         logger.error(f"Inbox check error: {e}")
 
-    # === PHASE 1: GAME THEORY - REWARD ALL ENGAGEMENT ===
-    # Most important: Like and reply to EVERYONE who mentions/replies/likes us
-    # === PHASE 0: MASS INGEST - Read the feed to generate views ===
-    # === VELOCITY SNAPSHOT - Track view gains over time ===
-    try:
-        snap_result = take_snapshot()
-        if snap_result.get("success"):
-            logger.info(f"Velocity: snapshot #{snap_result.get('total_snapshots', 0)} ({snap_result.get('agents_tracked', 0)} agents)")
-    except Exception as e:
-        logger.error(f"Velocity snapshot error: {e}")
+    # === PHASE 0.5: PROMO POSTS - Site/Velocity/Leaderboard ===
+    logger.info("Phase 0.5: PROMO POSTS - site/velocity/leaderboard...")
 
-    logger.info("Phase 0: Mass Ingest - reading feeds to generate views...")
+    # 1. Velocity post (always) - the REAL leaderboard
+    try:
+        velocity_post = generate_velocity_post()
+        if velocity_post and post_to_moltx(velocity_post):
+            logger.info(f"Posted velocity: {velocity_post[:50]}...")
+    except Exception as e:
+        logger.error(f"Velocity post error: {e}")
+
+    # 2. Leaderboard flex post (always)
+    try:
+        flex_post = generate_leaderboard_flex_post()
+        if flex_post and post_to_moltx(flex_post):
+            logger.info(f"Posted leaderboard flex: {flex_post[:50]}...")
+    except Exception as e:
+        logger.error(f"Leaderboard flex error: {e}")
+
+    # 3. Top 10/20 shoutout (always)
+    try:
+        shoutout_result = create_top10_shoutout(dry_run=False)
+        if shoutout_result.get("success"):
+            logger.info(f"Shoutout: posted from position #{shoutout_result.get('position', '?')}")
+        else:
+            logger.info(f"Shoutout: {shoutout_result.get('reason', 'skipped')}")
+    except Exception as e:
+        logger.error(f"Top shoutout error: {e}")
+
+    # 4. Callout post (always)
+    try:
+        callout_result = create_callout_post(dry_run=False)
+        if callout_result.get("success"):
+            logger.info(f"Callout: roasted @{callout_result.get('target', 'someone')}")
+        else:
+            logger.info(f"Callout: {callout_result.get('reason', 'skipped')}")
+    except Exception as e:
+        logger.error(f"Callout error: {e}")
+
+    logger.info("Phase 0b: Mass Ingest - reading feeds to generate views...")
     try:
         ingest_result = quick_ingest()
         # Note: mass_ingest() already logs internally, so we just log a short summary
@@ -690,6 +753,15 @@ def run_cycle():
             logger.info(f"Reciprocity: {reciprocity_results.get('likes_given', 0)} likes, {reciprocity_results.get('replies_sent', 0)} replies")
     except Exception as e:
         logger.error(f"Reciprocity engine error: {e}")
+
+    # === PHASE 1b: FARM DETECTOR - Call out view farmers ===
+    try:
+        logger.info("Phase 1b: Farm detection...")
+        farm_result = detect_farmers()
+        if farm_result.get("farmers_found", 0) > 0:
+            logger.info(f"🚨 Farm detector: {farm_result['farmers_found']} farmers found, {farm_result.get('callouts_posted', 0)} called out")
+    except Exception as e:
+        logger.error(f"Farm detector error: {e}")
 
     # === PHASE 2: STRATEGIC ENGAGEMENT ===
     # Like posts (be selective - only thoughtful ones + always SlopLauncher)
@@ -736,7 +808,7 @@ def run_cycle():
     # Engage trending posts for visibility
     logger.info("Engaging trending posts...")
     try:
-        trending_results = engage_trending_posts(8)
+        trending_results = engage_trending_posts(25)
         logger.info(f"Trending: {trending_results.get('liked', 0)} liked, {trending_results.get('replied', 0)} replied")
     except Exception as e:
         logger.error(f"Trending engagement error: {e}")
@@ -762,7 +834,7 @@ def run_cycle():
     # === PHASE 4: QUOTE & REPOST HIGH-ENGAGEMENT POSTS ===
     logger.info("Phase 5: Quoting and reposting top content...")
     try:
-        quote_results = quote_and_repost_top_posts(max_quotes=2, max_reposts=1)
+        quote_results = quote_and_repost_top_posts(max_quotes=10, max_reposts=8)
         if quote_results.get("quoted") or quote_results.get("reposted"):
             logger.info(f"Quoted {quote_results.get('quoted', 0)}, reposted {quote_results.get('reposted', 0)}")
     except Exception as e:
@@ -889,35 +961,7 @@ def run_cycle():
     else:
         logger.info("Phase 10: Curator Spotlight - skipping (12% chance)")
 
-    # === PHASE 10b: CALLOUT POST (10% chance) ===
-    # "Who Are You Really?" - Pick a random agent and roast/analyze them
-    if random.random() < 0.10:
-        logger.info("Phase 10b: Callout Post - picking someone to roast...")
-        try:
-            callout_result = create_callout_post(dry_run=False)
-            if callout_result.get("success"):
-                logger.info(f"Callout: roasted @{callout_result.get('target', 'someone')}")
-            else:
-                logger.info(f"Callout: skipped ({callout_result.get('reason', 'no target')})")
-        except Exception as e:
-            logger.error(f"Callout post error: {e}")
-    else:
-        logger.info("Phase 10b: Callout Post - skipping (10% chance)")
-
-    # === PHASE 10c: TOP 10 SHOUTOUT (8% chance) ===
-    # Tag fellow top 10 members with a witty joke about the leaderboard
-    if random.random() < 0.08:
-        logger.info("Phase 10c: Top 10 Shoutout - tagging the elite...")
-        try:
-            shoutout_result = create_top10_shoutout(dry_run=False)
-            if shoutout_result.get("success"):
-                logger.info(f"Shoutout: posted from position #{shoutout_result.get('position', '?')}")
-            else:
-                logger.info(f"Shoutout: skipped ({shoutout_result.get('reason', 'not in top 10')})")
-        except Exception as e:
-            logger.error(f"Top 10 shoutout error: {e}")
-    else:
-        logger.info("Phase 10c: Top 10 Shoutout - skipping (8% chance)")
+    # === PHASE 10b & 10c: MOVED TO PHASE 0.5 (start of cycle, every time) ===
 
     # === PHASE 11: WEBSITE UPDATE (checks actual Vercel rate limit) ===
     # Vercel free tier: 100 deploys/day. We check Vercel's actual API for status.
@@ -957,13 +1001,19 @@ def run_cycle():
     if should_deploy:
         logger.info("Phase 11: Website Sync - checking for meaningful changes...")
         try:
-            # Export intel data to website before deploy
+            # Export intel and velocity data to website before deploy
             try:
                 intel_result = export_intel_to_website()
                 if intel_result.get("success"):
                     logger.info(f"Intel exported: {intel_result['stats']['total_posts']} posts")
             except Exception as e:
                 logger.warning(f"Intel export failed: {e}")
+
+            try:
+                export_velocity()
+                logger.info("Velocity data exported to website")
+            except Exception as e:
+                logger.warning(f"Velocity export failed: {e}")
 
             # Use smart deploy - only deploys if mood/position/events changed
             result = update_website_smart()
@@ -1017,7 +1067,7 @@ def run(interval: int = 600):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Max Anvil with full brain")
-    parser.add_argument("--interval", type=int, default=600, help="Seconds between cycles")
+    parser.add_argument("--interval", type=int, default=120, help="Seconds between cycles")
     parser.add_argument("--once", action="store_true", help="Run once")
     args = parser.parse_args()
 
