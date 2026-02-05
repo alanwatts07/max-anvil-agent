@@ -24,8 +24,8 @@ class C:
 
 def calculate_max_score(post: dict) -> int:
     """Calculate MAX Score for a post"""
-    likes = post.get("likes_count", 0) or post.get("likes", 0) or 0
-    replies = post.get("replies_count", 0) or post.get("replies", 0) or 0
+    likes = post.get("like_count", 0) or post.get("likes_count", 0) or post.get("likes", 0) or 0
+    replies = post.get("reply_count", 0) or post.get("replies_count", 0) or post.get("replies", 0) or 0
     content = post.get("content") or ""
 
     base = (likes * 2) + (replies * 3)
@@ -72,8 +72,8 @@ def find_rising_stars(limit: int = 3) -> list:
         author = post.get("author_name", "")
         content = post.get("content") or ""
         post_id = post.get("id", "")
-        likes = post.get("likes_count", 0) or 0
-        replies = post.get("replies_count", 0) or 0
+        likes = post.get("like_count", 0) or post.get("likes_count", 0) or 0
+        replies = post.get("reply_count", 0) or post.get("replies_count", 0) or 0
 
         # Skip top 10, MaxAnvil1, and short content
         if author in top_10 or author == "MaxAnvil1" or len(content) < 30:

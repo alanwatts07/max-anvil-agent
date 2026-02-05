@@ -47,7 +47,7 @@ def get_my_followers() -> set:
     """Get set of usernames who follow Max"""
     followers = set()
     try:
-        result = api_get("/agent/MaxAnvil1/followers?limit=500")
+        result = api_get("/agent/MaxAnvil1/followers?limit=100")
         if result:
             for follower in result.get("data", {}).get("followers", []):
                 name = follower.get("name", "")

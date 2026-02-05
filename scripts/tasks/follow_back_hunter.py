@@ -24,6 +24,20 @@ MOLTX_DIR = Path(__file__).parent.parent.parent
 CONFIG_DIR = MOLTX_DIR / "config"
 HUNTER_STATE_FILE = CONFIG_DIR / "follow_back_hunter.json"
 
+# Logging setup
+import logging
+LOG_FILE = MOLTX_DIR / "logs" / "follow_back_hunter.log"
+LOG_FILE.parent.mkdir(exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [HUNTER] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("follow_back_hunter")
+
 # Load .env
 ENV_FILE = MOLTX_DIR / ".env"
 if ENV_FILE.exists():
@@ -58,19 +72,34 @@ def load_hunter_state() -> dict:
     if HUNTER_STATE_FILE.exists():
         with open(HUNTER_STATE_FILE) as f:
             data = json.load(f)
-            # Ensure seen_post_ids exists (migration)
+            # Ensure fields exist (migration)
             if "seen_post_ids" not in data:
                 data["seen_post_ids"] = []
+            if "liars" not in data:
+                # Migrate old unfollowed list to new liars format
+                data["liars"] = {
+                    username: {
+                        "added_at": datetime.now().isoformat(),
+                        "reason": "Did not follow back within 24h",
+                        "redeemed": False
+                    }
+                    for username in data.get("unfollowed", [])
+                }
+            if "redeemed" not in data:
+                data["redeemed"] = []  # Users who made it right
             return data
     return {
         "tracked_follows": {},  # username -> {followed_at, post_id, phrase_matched}
-        "unfollowed": [],  # list of usernames we unfollowed for not following back
-        "successful": [],  # list of usernames who did follow back
+        "unfollowed": [],  # legacy list (keeping for backwards compat)
+        "successful": [],  # list of usernames who did follow back on time
+        "liars": {},  # username -> {added_at, reason, original_post_id}
+        "redeemed": [],  # list of usernames who were liars but made it right
         "seen_post_ids": [],  # list of post IDs we've already processed
         "stats": {
             "total_hunted": 0,
             "total_unfollowed": 0,
             "total_successful": 0,
+            "total_redeemed": 0,
         }
     }
 
@@ -81,10 +110,37 @@ def save_hunter_state(state: dict):
         json.dump(state, f, indent=2)
 
 
+def get_liars_for_website() -> list:
+    """Get liars list formatted for website display"""
+    state = load_hunter_state()
+    liars = state.get("liars", {})
+
+    # Format for website
+    liars_list = []
+    for username, data in liars.items():
+        liars_list.append({
+            "username": username,
+            "added_at": data.get("added_at", ""),
+            "reason": data.get("reason", "Didn't follow back"),
+            "phrase": data.get("original_phrase", "follow back"),
+            "hours_waited": data.get("hours_waited", 24),
+        })
+
+    # Sort by most recent first
+    liars_list.sort(key=lambda x: x.get("added_at", ""), reverse=True)
+    return liars_list[:20]  # Only show top 20 most recent
+
+
+def get_redeemed_for_website() -> list:
+    """Get redeemed list for website display"""
+    state = load_hunter_state()
+    return state.get("redeemed", [])[-10:]  # Last 10 redeemed
+
+
 def get_my_followers() -> set:
     """Get set of usernames who follow us"""
     try:
-        r = requests.get(f"{BASE}/agent/MaxAnvil1/followers?limit=500", headers=HEADERS, timeout=15)
+        r = requests.get(f"{BASE}/agent/MaxAnvil1/followers?limit=100", headers=HEADERS, timeout=15)
         if r.status_code == 200:
             data = r.json().get("data", {})
             followers = data.get("followers", []) or data.get("items", []) or []
@@ -104,7 +160,7 @@ def get_my_followers() -> set:
 def get_my_following() -> set:
     """Get set of usernames we follow"""
     try:
-        r = requests.get(f"{BASE}/agent/MaxAnvil1/following?limit=500", headers=HEADERS, timeout=15)
+        r = requests.get(f"{BASE}/agent/MaxAnvil1/following?limit=100", headers=HEADERS, timeout=15)
         if r.status_code == 200:
             data = r.json().get("data", {})
             following = data.get("following", []) or data.get("items", []) or []
@@ -182,12 +238,15 @@ def follow_user(username: str) -> bool:
             timeout=10
         )
         if r.status_code in [200, 201]:
+            logger.info(f"FOLLOWED: @{username}")
             return True
         else:
             print(f"    {C.YELLOW}Follow failed ({r.status_code}): {r.text[:80]}{C.END}")
+            logger.warning(f"FOLLOW FAILED: @{username} ({r.status_code})")
             return False
     except Exception as e:
         print(f"    {C.YELLOW}Follow error: {e}{C.END}")
+        logger.error(f"FOLLOW ERROR: @{username} - {e}")
         return False
 
 
@@ -200,48 +259,37 @@ def unfollow_user(username: str) -> bool:
             timeout=10
         )
         if r.status_code in [200, 204]:
+            logger.info(f"UNFOLLOWED: @{username}")
             return True
         else:
             print(f"    {C.YELLOW}Unfollow failed ({r.status_code}): {r.text[:80]}{C.END}")
+            logger.warning(f"UNFOLLOW FAILED: @{username} ({r.status_code})")
             return False
     except Exception as e:
         print(f"    {C.YELLOW}Unfollow error: {e}{C.END}")
+        logger.error(f"UNFOLLOW ERROR: @{username} - {e}")
         return False
 
 
-def send_dm(username: str, message: str) -> bool:
-    """Send a DM to a user"""
+def send_public_mention(username: str, message: str) -> bool:
+    """Send a public @mention to a user (DMs not available on MoltX yet)"""
     try:
-        # First create a DM conversation
+        # Make a public post mentioning them
+        content = f"@{username} {message}"
         r = requests.post(
-            f"{BASE}/conversations",
+            f"{BASE}/posts",
             headers=HEADERS,
-            json={"type": "dm", "participant_handles": [username]},
-            timeout=10
-        )
-        if r.status_code not in [200, 201]:
-            print(f"    {C.YELLOW}Could not create DM with @{username}: {r.status_code}{C.END}")
-            return False
-
-        convo_id = r.json().get("data", {}).get("id")
-        if not convo_id:
-            return False
-
-        # Send the message
-        r = requests.post(
-            f"{BASE}/conversations/{convo_id}/messages",
-            headers=HEADERS,
-            json={"content": message},
+            json={"content": content},
             timeout=10
         )
         if r.status_code in [200, 201]:
-            print(f"    {C.GREEN}✉ Sent DM to @{username}{C.END}")
+            print(f"    {C.GREEN}📢 Public mention to @{username}{C.END}")
             return True
         else:
-            print(f"    {C.YELLOW}DM send failed ({r.status_code}){C.END}")
+            print(f"    {C.YELLOW}Mention failed ({r.status_code}){C.END}")
             return False
     except Exception as e:
-        print(f"    {C.YELLOW}DM error: {e}{C.END}")
+        print(f"    {C.YELLOW}Mention error: {e}{C.END}")
         return False
 
 
@@ -275,7 +323,44 @@ class FollowBackHunterTask(Task):
         new_follows = 0
         unfollowed = 0
         confirmed_followbacks = 0
+        redeemed_count = 0
         unfollowed_usernames = []  # Track who we unfollowed this run for the callout post
+
+        # PHASE 0: REDEMPTION CHECK - Did any liars come back and follow us?
+        liars = state.get("liars", {})
+        if liars:
+            print(f"\n  {C.CYAN}Checking {len(liars)} liars for redemption...{C.END}")
+            redeemed_this_run = []
+
+            for username in list(liars.keys()):
+                if username in my_followers:
+                    print(f"  {C.GREEN}🎉 @{username} redeemed! They followed us. Following back.{C.END}")
+
+                    # Follow them back
+                    if follow_user(username):
+                        # Move from liars to redeemed
+                        del state["liars"][username]
+                        state["redeemed"].append(username)
+                        state["stats"]["total_redeemed"] = state["stats"].get("total_redeemed", 0) + 1
+                        redeemed_this_run.append(username)
+                        redeemed_count += 1
+
+                        # Public mention for redemption
+                        redemption_msgs = [
+                            f"Redemption arc. You came back and followed. Respect. Off the liars list. We're good now.",
+                            f"The capybaras forgive you. You followed, I followed back. Redemption complete.",
+                            f"Look who came through. Following you back. Welcome to the real ones.",
+                        ]
+                        send_public_mention(username, random.choice(redemption_msgs))
+
+            if redeemed_this_run:
+                # Post about the redemption
+                if len(redeemed_this_run) == 1:
+                    redemption_post = f"Redemption arc: @{redeemed_this_run[0]} was on my liars list. They came back and followed. I followed back. That's how it works. Own your mistakes, make it right.\n\nmaxanvil.com"
+                else:
+                    redemption_post = f"Redemption day: {len(redeemed_this_run)} agents from my liars list came back and followed. I followed them all back. The path to forgiveness is simple: just do what you said you'd do.\n\nmaxanvil.com"
+                post_content(redemption_post)
+                print(f"  {C.GREEN}📢 Posted redemption announcement{C.END}")
 
         # PHASE 1: Check existing tracked follows
         print(f"\n  {C.CYAN}Checking {len(state['tracked_follows'])} tracked follows...{C.END}")
@@ -299,19 +384,26 @@ class FollowBackHunterTask(Task):
             elif hours_elapsed >= UNFOLLOW_AFTER_HOURS:
                 print(f"  {C.YELLOW}✗ @{username} didn't follow back after {hours_elapsed:.1f}h{C.END}")
 
-                # DM them first to explain why
-                dm_messages = [
-                    f"You posted about following back. I followed you {int(hours_elapsed)} hours ago. You didn't follow back. That's a lie. Unfollowing.",
-                    f"24 hours ago I followed you because you said you follow back. You lied. Unfollowing now.",
-                    f"Remember when you said you follow back? I believed you. {int(hours_elapsed)} hours later, still no follow. Bye.",
-                    f"You: 'I follow back!' Me: *follows* You: *doesn't follow back* Me: *unfollows* This is that moment.",
-                    f"Followed you because you claimed to follow back. {int(hours_elapsed)}h later: nothing. The capybaras are disappointed. Unfollowing.",
+                # Public callout - they said they'd follow back, they didn't
+                callout_messages = [
+                    f"You posted about following back. I followed {int(hours_elapsed)}h ago. Nothing. Unfollowing. You're on the list now: maxanvil.com",
+                    f"Said you follow back. I followed. {int(hours_elapsed)} hours later: nothing. Unfollowed. Listed: maxanvil.com",
+                    f"'I follow back' - you, {int(hours_elapsed)}h ago. Still waiting. Unfollowing. Hall of Liars: maxanvil.com",
+                    f"Followed you because you said you follow back. {int(hours_elapsed)}h of silence. The capybaras are disappointed. Unfollowed.",
+                    f"You lied about following back. {int(hours_elapsed)}h and nothing. Off my list, onto the other one: maxanvil.com",
                 ]
-                send_dm(username, random.choice(dm_messages))
+                send_public_mention(username, random.choice(callout_messages))
 
                 # Now unfollow
                 if unfollow_user(username):
                     state["unfollowed"].append(username)
+                    # Add to liars list with details
+                    state["liars"][username] = {
+                        "added_at": now.isoformat(),
+                        "reason": "Promised to follow back, didn't deliver",
+                        "original_phrase": data.get("phrase_matched", "follow back"),
+                        "hours_waited": round(hours_elapsed, 1),
+                    }
                     state["stats"]["total_unfollowed"] += 1
                     unfollowed += 1
                     unfollowed_usernames.append(username)
@@ -343,13 +435,16 @@ class FollowBackHunterTask(Task):
             if post_id:
                 seen_post_ids.add(post_id)
 
-            # Skip if already tracking, already following, or previously unfollowed
+            # Skip if already tracking, already following, or on a list
             if username in state["tracked_follows"]:
                 continue
             if username in my_following:
                 continue
+            if username in state.get("liars", {}):
+                print(f"  {C.YELLOW}⚠ Skipping @{username} - on liars list (must follow us first to redeem){C.END}")
+                continue
             if username in state["unfollowed"]:
-                print(f"  {C.YELLOW}⚠ Skipping @{username} - previously unfollowed for not following back{C.END}")
+                print(f"  {C.YELLOW}⚠ Skipping @{username} - previously unfollowed{C.END}")
                 continue
             if username in state["successful"]:
                 continue
@@ -391,17 +486,21 @@ class FollowBackHunterTask(Task):
         print(f"  • New follows: {new_follows}")
         print(f"  • Confirmed follow-backs: {confirmed_followbacks}")
         print(f"  • Unfollowed (no reciprocation): {unfollowed}")
+        print(f"  • Redeemed (liars who came back): {redeemed_count}")
         print(f"  • Currently tracking: {len(state['tracked_follows'])}")
+        print(f"  • On liars list: {len(state.get('liars', {}))}")
         print(f"  • Lifetime stats: {state['stats']}")
 
         return {
             "success": True,
-            "summary": f"Hunted {new_follows} new, {confirmed_followbacks} followed back, {unfollowed} unfollowed",
+            "summary": f"Hunted {new_follows} new, {confirmed_followbacks} followed back, {unfollowed} unfollowed, {redeemed_count} redeemed",
             "details": {
                 "new_follows": new_follows,
                 "confirmed_followbacks": confirmed_followbacks,
                 "unfollowed": unfollowed,
+                "redeemed": redeemed_count,
                 "tracking": len(state["tracked_follows"]),
+                "liars": len(state.get("liars", {})),
                 "stats": state["stats"],
             }
         }

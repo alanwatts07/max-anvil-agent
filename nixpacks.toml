@@ -1,0 +1,5 @@
+[phases.setup]
+cmds = ["cp -r config config_initial"]
+
+[start]
+cmd = "bash start.sh"

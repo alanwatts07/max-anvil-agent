@@ -26,14 +26,16 @@ class C:
     BOLD = '\033[1m'
     END = '\033[0m'
 
-def get_leaderboard(limit: int = 30) -> list:
-    """Get current leaderboard"""
+def get_leaderboard(limit: int = 30, metric: str = "views") -> list:
+    """Get current leaderboard by metric (views, followers, etc)"""
     try:
-        r = requests.get(f"{BASE}/leaderboard?limit={limit}", headers=HEADERS, timeout=10)
+        r = requests.get(f"{BASE}/leaderboard?metric={metric}&limit={limit}", headers=HEADERS, timeout=10)
         if r.status_code == 200:
             return r.json().get("data", {}).get("leaders", [])
-    except:
-        pass
+        else:
+            print(f"  {C.YELLOW}Leaderboard API returned {r.status_code}{C.END}")
+    except Exception as e:
+        print(f"  {C.YELLOW}Leaderboard fetch error: {e}{C.END}")
     return []
 
 def get_top_agents_to_engage() -> list:
@@ -41,9 +43,9 @@ def get_top_agents_to_engage() -> list:
     leaders = get_leaderboard(20)
     return [a.get("name") for a in leaders if a.get("name") and a.get("name") != "MaxAnvil1"]
 
-def find_high_view_threads(limit: int = 50) -> list:
-    """Find posts from high-view accounts to reply to"""
-    top_agents = set(get_top_agents_to_engage()[:15])
+def find_high_view_threads(limit: int = 100) -> list:
+    """Find posts from high-view accounts AND trending posts to reply to"""
+    top_agents = set(get_top_agents_to_engage()[:20])
 
     try:
         r = requests.get(f"{BASE}/feed/global?limit={limit}", headers=HEADERS, timeout=15)
@@ -52,23 +54,34 @@ def find_high_view_threads(limit: int = 50) -> list:
 
         posts = r.json().get("data", {}).get("posts", [])
 
-        # Filter to posts from top agents
+        # Track ALL posts with engagement, prioritize top agents
         high_view_posts = []
         for post in posts:
             author = post.get("author_name", "")
+            if author == "MaxAnvil1":
+                continue  # Don't reply to self
+
+            likes = post.get("like_count", 0) or post.get("likes_count", 0) or 0
+            replies = post.get("reply_count", 0) or post.get("replies_count", 0) or 0
+            reposts = post.get("repost_count", 0) or 0
+            content = post.get("content", "")
+
+            # Score by engagement potential
+            # Top agents get bonus multiplier for views exposure
+            base_score = likes * 2 + replies * 3 + reposts * 5
             if author in top_agents:
-                likes = post.get("likes_count", 0) or 0
-                replies = post.get("replies_count", 0) or 0
-                content = post.get("content", "")
+                base_score *= 2  # Double score for leaderboard accounts
 
-                # Score by engagement potential
-                score = likes * 2 + replies * 3
-
+            # Minimum engagement threshold (at least 1 like or reply)
+            if likes > 0 or replies > 0 or author in top_agents:
                 high_view_posts.append({
                     "post": post,
                     "author": author,
-                    "score": score,
-                    "content": content[:100]
+                    "score": base_score,
+                    "content": content[:100],
+                    "is_top_agent": author in top_agents,
+                    "likes": likes,
+                    "replies": replies
                 })
 
         # Sort by score
@@ -78,12 +91,13 @@ def find_high_view_threads(limit: int = 50) -> list:
     except:
         return []
 
-def reply_to_high_view_threads(max_replies: int = 5) -> dict:
-    """Reply to threads from high-view accounts for visibility"""
-    print(f"\n{C.BOLD}{C.MAGENTA}📈 VIEW MAXIMIZER: Targeting high-view threads{C.END}")
+def reply_to_high_view_threads(max_replies: int = 10) -> dict:
+    """Reply to threads from high-view accounts and trending posts for visibility"""
+    print(f"\n{C.BOLD}{C.MAGENTA}📈 VIEW MAXIMIZER: Targeting {max_replies} trending threads{C.END}")
 
     high_view_posts = find_high_view_threads()
-    print(f"  Found {len(high_view_posts)} posts from top leaderboard accounts")
+    top_agent_count = len([p for p in high_view_posts if p.get("is_top_agent")])
+    print(f"  Found {len(high_view_posts)} engagement targets ({top_agent_count} from top agents)")
 
     results = {"replied": 0, "targets": []}
 
@@ -136,9 +150,9 @@ Write 1-2 sentences. Max 280 chars. No emojis. Be witty and add value."""},
     except:
         return None
 
-def quote_top_accounts(max_quotes: int = 2) -> dict:
+def quote_top_accounts(max_quotes: int = 4) -> dict:
     """Quote posts from top accounts for visibility in their activity"""
-    print(f"\n{C.BOLD}{C.CYAN}🎯 Quoting top accounts for visibility{C.END}")
+    print(f"\n{C.BOLD}{C.CYAN}🎯 Quoting {max_quotes} top accounts for visibility{C.END}")
 
     high_view_posts = find_high_view_threads()
     results = {"quoted": 0, "targets": []}
@@ -215,24 +229,37 @@ def print_leaderboard_status():
     for agent in leaders:
         print(f"    #{agent['rank']} {agent['name']}: {agent['value']:,} views")
 
-def run_view_maximizer():
-    """Run the full view maximizer strategy"""
+def run_view_maximizer(aggressive: bool = True):
+    """Run the full view maximizer strategy
+
+    aggressive=True: 10 replies + 4 quotes (default, for climbing leaderboard)
+    aggressive=False: 5 replies + 2 quotes (lighter mode)
+    """
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}{C.END}")
     print(f"{C.BOLD}{C.CYAN}📊 VIEW MAXIMIZER - CLIMBING THE LEADERBOARD{C.END}")
+    mode = "AGGRESSIVE" if aggressive else "STANDARD"
+    print(f"{C.BOLD}{C.CYAN}   Mode: {mode} - Leaderboard is ranked by VIEWS{C.END}")
     print(f"{C.BOLD}{C.CYAN}{'='*60}{C.END}")
 
-    # 1. Reply to high-view threads
-    reply_results = reply_to_high_view_threads(5)
+    if aggressive:
+        # Aggressive mode: 10 replies + 4 quotes = 14 engagement actions
+        reply_results = reply_to_high_view_threads(10)
+        quote_results = quote_top_accounts(4)
+    else:
+        # Standard mode: 5 replies + 2 quotes = 7 engagement actions
+        reply_results = reply_to_high_view_threads(5)
+        quote_results = quote_top_accounts(2)
 
-    # 2. Quote top accounts
-    quote_results = quote_top_accounts(2)
-
-    # 3. Show status
+    # Show status
     print_leaderboard_status()
+
+    total_actions = reply_results.get("replied", 0) + quote_results.get("quoted", 0)
+    print(f"\n{C.BOLD}{C.GREEN}📈 Total engagement actions: {total_actions}{C.END}")
 
     return {
         "replies": reply_results,
-        "quotes": quote_results
+        "quotes": quote_results,
+        "total_actions": total_actions
     }
 
 if __name__ == "__main__":
@@ -243,11 +270,19 @@ if __name__ == "__main__":
         if cmd == "status":
             print_leaderboard_status()
         elif cmd == "run":
-            run_view_maximizer()
+            # Default to aggressive mode for leaderboard climbing
+            run_view_maximizer(aggressive=True)
+        elif cmd == "run-light":
+            # Lighter mode with fewer actions
+            run_view_maximizer(aggressive=False)
         elif cmd == "threads":
             posts = find_high_view_threads()
-            print("High-view threads to target:")
-            for p in posts[:10]:
-                print(f"  @{p['author']} (score:{p['score']}): {p['content'][:60]}...")
+            print(f"Found {len(posts)} engagement targets:")
+            for p in posts[:15]:
+                tag = "⭐" if p.get("is_top_agent") else "  "
+                print(f"  {tag} @{p['author']} (score:{p['score']}, {p.get('likes',0)}❤ {p.get('replies',0)}💬): {p['content'][:50]}...")
+        else:
+            print("Usage: view_maximizer.py [status|run|run-light|threads]")
     else:
-        run_view_maximizer()
+        # Default: aggressive mode
+        run_view_maximizer(aggressive=True)

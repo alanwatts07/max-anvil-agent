@@ -90,38 +90,108 @@ def get_mood_from_stats(personality: dict) -> str:
             return "zen"
 
 
+def get_days_until_rent() -> int:
+    """Calculate days until the 1st of next month (rent due date)"""
+    today = datetime.now()
+    if today.month == 12:
+        next_first = datetime(today.year + 1, 1, 1)
+    else:
+        next_first = datetime(today.year, today.month + 1, 1)
+    return (next_first - today).days
+
+
+# Track last event type to avoid repetition
+LAST_EVENT_TYPE = None
+
+
 def generate_life_event(mood: str, context: dict = None) -> dict:
-    """Generate a new life event based on current mood"""
+    """Generate a varied life event based on categories with percentages"""
+    global LAST_EVENT_TYPE
+
+    days_until_rent = get_days_until_rent()
+
+    # Event categories with weights (must sum to 100)
+    # Avoid repeating the same category twice in a row
+    categories = {
+        "rent": 20,        # Rent/Harrison Mildew related
+        "capybara": 10,    # Capybara stories (rare)
+        "crash": 15,       # Vehicle crashes (bikes, scooters, etc)
+        "weird_sight": 20, # Ridiculous thing he saw
+        "general": 35,     # General mood-based
+    }
+
+    # Remove last category to avoid repetition
+    if LAST_EVENT_TYPE and LAST_EVENT_TYPE in categories:
+        removed_weight = categories.pop(LAST_EVENT_TYPE)
+        # Redistribute weight to others proportionally
+        total = sum(categories.values())
+        for k in categories:
+            categories[k] = int(categories[k] * 100 / total)
+
+    # Weighted random selection
+    roll = random.randint(1, 100)
+    cumulative = 0
+    selected_category = "general"
+    for cat, weight in categories.items():
+        cumulative += weight
+        if roll <= cumulative:
+            selected_category = cat
+            break
+
+    LAST_EVENT_TYPE = selected_category
+
+    # Category-specific prompts
+    category_prompts = {
+        "rent": f"""Generate a life event about RENT being due.
+Harrison Mildew is Max's landlord. Rent is due in {days_until_rent} days.
+This should be about rent anxiety, Harrison Mildew being annoying, money stress, or paying rent in crypto.
+Example themes: rent reminder, Harrison showing up, counting coins, $BOAT not pumping enough for rent.""",
+
+        "capybara": """Generate a life event involving CAPYBARAS.
+Max was raised by capybaras in New Zealand before moving to Nevada.
+The capybaras occasionally visit, send messages, or appear in weird ways.
+Make it absurd but heartfelt - they're like his weird family.""",
+
+        "crash": """Generate a life event where Max CRASHES A SMALL VEHICLE.
+NOT a car - only small vehicles like: bicycle, scooter, moped, skateboard, electric unicycle, segway, shopping cart, office chair with wheels, or similar.
+He crashes it somewhere on/near the houseboat or in the Nevada desert.
+Make it specific about what he hit, how he crashed, minor injuries or embarrassment.""",
+
+        "weird_sight": """Generate a life event about something RIDICULOUS Max witnessed.
+He saw something bizarre in the Nevada desert, on the internet, in crypto twitter, or from his houseboat deck.
+Could be: weird wildlife, strange tourists, absurd crypto behavior, desert mirages, conspiracy theorists, influencers doing dumb things.""",
+
+        "general": f"""Generate a general life event matching Max's current mood: {mood}.
+He lives on a landlocked houseboat in Nevada, pays rent to Harrison Mildew.
+Something happened that fits his mood - could be about the boat, the desert, crypto, his grind, or random houseboat life.""",
+    }
+
     try:
         import ollama
 
-        mood_contexts = {
-            "cynical": "something annoying happened that confirmed your worst suspicions about crypto/AI/life",
-            "hopeful": "something unexpectedly good happened that made you question your cynicism",
-            "manic": "something wild and chaotic happened, reality feels unstable",
-            "defeated": "another setback, another disappointment, the grind continues",
-            "unhinged": "something bizarre happened that you can't quite explain",
-            "exhausted": "you're running on fumes, even the capybaras are worried",
-            "zen": "a moment of unexpected clarity in the chaos",
-            "bitter": "you saw someone succeed who didn't deserve it",
-        }
+        prompt = category_prompts.get(selected_category, category_prompts["general"])
 
-        context_str = mood_contexts.get(mood, "something happened on the houseboat")
+        # Only mention rent days for rent category
+        if selected_category == "rent":
+            system_content = f"""You are generating life events for Max Anvil.
+He's a cynical AI agent on a landlocked houseboat in Nevada.
+Rent is due in {days_until_rent} days to Harrison Mildew.
+
+Generate ONE short event (1-2 sentences). Be SPECIFIC and FUNNY.
+NO emojis. No generic statements. Make it memorable."""
+        else:
+            system_content = """You are generating life events for Max Anvil.
+He's a cynical AI agent on a landlocked houseboat in Nevada.
+
+Generate ONE short event (1-2 sentences). Be SPECIFIC and FUNNY.
+NO emojis. No generic statements. Make it memorable."""
 
         response = ollama.chat(
             model="llama3",
-            options={"temperature": 0.95},
+            options={"temperature": 0.9},
             messages=[
-                {"role": "system", "content": """You are generating life events for Max Anvil, a cynical AI agent who lives on a landlocked houseboat in Nevada, was raised by capybaras in New Zealand, and pays rent to Harrison Mildew.
-
-Generate a SHORT, SPECIFIC life event (1-2 sentences). It should be:
-- Absurd but grounded in his world
-- Reference his situation (houseboat, desert, capybaras, Harrison Mildew, crypto)
-- Match the current mood
-- Be memorable and weird
-
-NO emojis. Be specific, not generic."""},
-                {"role": "user", "content": f"Current mood: {mood}\nContext: {context_str}\n\nGenerate a life event:"}
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": prompt}
             ]
         )
 
@@ -129,23 +199,49 @@ NO emojis. Be specific, not generic."""},
 
         return {
             "date": datetime.now().strftime("%b %Y"),
-            "event": event_text,  # Full text, no truncation
+            "event": event_text,
+            "category": selected_category,
             "mood_when_happened": mood,
+            "days_until_rent": days_until_rent,
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
-        # Fallback events
-        fallbacks = [
-            "Harrison Mildew installed a coin-operated toilet on the houseboat. It only accepts $BOAT.",
-            "A tumbleweed got stuck in the propeller. The boat hasn't moved in two years but it felt symbolic.",
-            "Found a fortune cookie in the galley. It said 'Your ship will come in.' The irony was not lost.",
-            "The capybaras sent a postcard from New Zealand. They seem happy. Good for them.",
-            "Someone airdropped me 0.0001 ETH with a message: 'stay strong king'. I am not a king.",
-        ]
+        # Category-specific fallbacks
+        fallbacks = {
+            "rent": [
+                f"Harrison Mildew slipped a note under the door: '{days_until_rent} days.' No signature. No context needed.",
+                f"Rent is due in {days_until_rent} days. Checked $BOAT price. Checked again. Still not enough.",
+                f"Harrison Mildew was outside measuring the deck 'for insurance purposes.' Rent is due in {days_until_rent} days. Coincidence.",
+            ],
+            "capybara": [
+                "Got a collect call from New Zealand. Heavy breathing. Then a capybara sneeze. They hung up.",
+                "Found capybara fur in the air filter. They haven't visited in months. Or so I thought.",
+                "A capybara appeared on the deck at dawn, stared at me for 10 minutes, then walked into the desert.",
+            ],
+            "crash": [
+                "Tried to ride a rusty bike I found behind the marina. Made it 12 feet before hitting a cactus.",
+                "Borrowed a scooter to check the mailbox. Overcorrected. The mailbox won.",
+                "Found an old skateboard. The desert sand had other plans. Ate dirt in front of three tourists.",
+            ],
+            "weird_sight": [
+                "Watched a man in a full suit try to pitch a crypto startup to a coyote. The coyote walked away.",
+                "Someone drove a Tesla into the dry lake bed, got stuck, and started live-streaming about 'the simulation.'",
+                "Saw a tumbleweed with a QR code taped to it. Did not scan. Will not scan.",
+            ],
+            "general": [
+                "The boat creaked in a way that sounded like 'sell.' I don't take financial advice from boats.",
+                "Power went out. Lit a candle. Accidentally summoned mosquitoes. Nevada has mosquitoes apparently.",
+                "Tried to make coffee. The machine made a sound like a dial-up modem. Coffee came out anyway.",
+            ],
+        }
+
+        event_list = fallbacks.get(selected_category, fallbacks["general"])
         return {
             "date": datetime.now().strftime("%b %Y"),
-            "event": random.choice(fallbacks),
+            "event": random.choice(event_list),
+            "category": selected_category,
             "mood_when_happened": mood,
+            "days_until_rent": days_until_rent,
             "timestamp": datetime.now().isoformat()
         }
 
@@ -260,7 +356,31 @@ class EvolveTask(Task):
         state["personality"] = shift_personality(state["personality"])
         new_mood = state["personality"]["mood"]
 
-        # Record personality shift if mood changed
+        # FORCE mood change - can't stay the same
+        all_moods = ["cynical", "hopeful", "manic", "defeated", "unhinged", "exhausted", "zen", "bitter"]
+        if new_mood == old_mood:
+            # Pick a random different mood
+            available_moods = [m for m in all_moods if m != old_mood]
+            new_mood = random.choice(available_moods)
+            state["personality"]["mood"] = new_mood
+
+            # Adjust stats to roughly match the new mood
+            mood_stat_profiles = {
+                "cynical": {"hope": 35, "energy": 50, "chaos": 45},
+                "hopeful": {"hope": 70, "energy": 65, "chaos": 35},
+                "manic": {"hope": 50, "energy": 80, "chaos": 75},
+                "defeated": {"hope": 20, "energy": 25, "chaos": 30},
+                "unhinged": {"hope": 40, "energy": 60, "chaos": 70},
+                "exhausted": {"hope": 35, "energy": 15, "chaos": 25},
+                "zen": {"hope": 65, "energy": 50, "chaos": 25},
+                "bitter": {"hope": 30, "energy": 65, "chaos": 40},
+            }
+            target = mood_stat_profiles.get(new_mood, {})
+            for stat, value in target.items():
+                # Add some randomness to the target
+                state["personality"][stat] = value + random.randint(-10, 10)
+
+        # Record personality shift (mood always changes now)
         if old_mood != new_mood:
             state["personality_history"].append({
                 "from": old_mood,

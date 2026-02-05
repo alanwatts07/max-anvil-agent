@@ -11,6 +11,7 @@ Exports:
 import os
 import json
 import sqlite3
+import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -19,6 +20,7 @@ MOLTX_DIR = Path(__file__).parent.parent.parent
 INTEL_DB = MOLTX_DIR / "data" / "intel.db"
 WEBSITE_DIR = Path("/home/morpheus/Hackstuff/maxanvilsite")
 EXPORT_FILE = WEBSITE_DIR / "public" / "data" / "intel.json"
+EXPORT_FILE_MOLTX = MOLTX_DIR / "data" / "intel.json"  # For raw GitHub access
 
 
 class C:
@@ -118,7 +120,7 @@ def export_intel_data() -> dict:
             "id": row["id"]
         })
 
-    # === AGENT STATS (top 30 by post count) ===
+    # === AGENT STATS (top 30 by post count, will be re-sorted by interval on frontend) ===
     cursor.execute("""
         SELECT
             agent_name,
@@ -129,9 +131,11 @@ def export_intel_data() -> dict:
             MAX(timestamp) as last_post,
             MIN(timestamp) as first_post
         FROM posts
+        WHERE agent_name IS NOT NULL AND agent_name != ''
         GROUP BY agent_name
+        HAVING post_count >= 2
         ORDER BY post_count DESC
-        LIMIT 30
+        LIMIT 50
     """)
     for row in cursor.fetchall():
         # Calculate posting interval (average time between posts)
@@ -179,18 +183,75 @@ def export_intel_data() -> dict:
 
 
 def save_export(data: dict) -> dict:
-    """Save exported data to website public folder"""
-    # Ensure directory exists
+    """Save exported data to both website and moltx data folder (for GitHub)"""
+    # Ensure directories exist
     EXPORT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    EXPORT_FILE_MOLTX.parent.mkdir(parents=True, exist_ok=True)
 
+    # Save to website (for local dev)
     with open(EXPORT_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+    # Save to moltx data folder (for raw GitHub access)
+    with open(EXPORT_FILE_MOLTX, "w") as f:
         json.dump(data, f, indent=2)
 
     return {
         "success": True,
-        "file": str(EXPORT_FILE),
-        "size_kb": round(EXPORT_FILE.stat().st_size / 1024, 1)
+        "file": str(EXPORT_FILE_MOLTX),
+        "size_kb": round(EXPORT_FILE_MOLTX.stat().st_size / 1024, 1)
     }
+
+
+def push_intel_data() -> bool:
+    """Git commit and push intel.json to moltx repo (won't trigger Vercel)."""
+    try:
+        # Add the file
+        subprocess.run(
+            ["git", "add", "data/intel.json"],
+            cwd=MOLTX_DIR,
+            capture_output=True,
+            text=True
+        )
+
+        # Check if there are changes to commit
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "data/intel.json"],
+            cwd=MOLTX_DIR,
+            capture_output=True,
+            text=True
+        )
+
+        if not status.stdout.strip():
+            return False  # No changes, skip silently
+
+        # Commit
+        subprocess.run(
+            ["git", "commit", "-m", "intel data"],
+            cwd=MOLTX_DIR,
+            capture_output=True,
+            text=True
+        )
+
+        # Push
+        result = subprocess.run(
+            ["git", "push"],
+            cwd=MOLTX_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0:
+            print(f"  {C.GREEN}✓ Pushed intel data to GitHub{C.END}")
+            return True
+        else:
+            print(f"  {C.YELLOW}⚠ Git push failed: {result.stderr}{C.END}")
+            return False
+
+    except Exception as e:
+        print(f"  {C.RED}✗ Push error: {e}{C.END}")
+        return False
 
 
 def run_export() -> dict:
@@ -214,11 +275,15 @@ def run_export() -> dict:
     print(f"    - {len(data['agent_stats'])} agent profiles")
     print(f"    - File size: {result['size_kb']} KB")
 
+    # Push to GitHub for raw access
+    pushed = push_intel_data()
+
     return {
         "success": True,
         "stats": data["stats"],
         "file": result["file"],
-        "size_kb": result["size_kb"]
+        "size_kb": result["size_kb"],
+        "pushed": pushed
     }
 
 

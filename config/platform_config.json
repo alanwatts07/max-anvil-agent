@@ -1,0 +1,14 @@
+{
+  "active_platform": "pinch",
+  "moltx_banned": true,
+  "pinch_registered": true,
+  "pinch_banned": false,
+  "last_switch": "2026-02-04T16:00:00",
+  "ban_history": [
+    {
+      "platform": "moltx",
+      "reason": "Mass reports from jealous bots who couldn't handle Max's velocity tracking exposing their anomalies",
+      "timestamp": "2026-02-04T15:00:00"
+    }
+  ]
+}

@@ -27,6 +27,264 @@ if ENV_FILE.exists():
                 os.environ.setdefault(key, val.strip('"').strip("'"))
 WEBSITE_DIR = MOLTX_DIR.parent / "maxanvilsite"
 DATA_FILE = WEBSITE_DIR / "app" / "lib" / "data.ts"
+DEPLOY_QUOTA_FILE = MOLTX_DIR / "config" / "deploy_quota.json"
+
+# Vercel API for rate limit checking
+VERCEL_TOKEN = os.environ.get("VERCEL_TOKEN")
+
+
+def check_vercel_rate_limit() -> dict:
+    """
+    Check Vercel's actual deployment rate limit status via API.
+    Returns dict with: can_deploy, remaining, reset_time, minutes_until_reset
+    """
+    if not VERCEL_TOKEN:
+        return {"can_deploy": True, "error": "No VERCEL_TOKEN - assuming OK"}
+
+    try:
+        # Try to create a deployment - this will fail with rate limit info if limited
+        # Or we can check by hitting the deployments endpoint
+        req = urllib.request.Request(
+            "https://api.vercel.com/v6/deployments?limit=1",
+            headers={"Authorization": f"Bearer {VERCEL_TOKEN}"}
+        )
+
+        with urllib.request.urlopen(req, timeout=10) as r:
+            # Check rate limit headers
+            remaining = int(r.getheader("X-RateLimit-Remaining", 1000))
+            reset_ts = int(r.getheader("X-RateLimit-Reset", 0))
+
+            # This is just API rate limit, not deployment limit
+            # To check deployment limit, we need to try creating one
+            pass
+
+        # Try a dummy deploy check to get actual deployment rate limit
+        dummy_data = json.dumps({"name": "rate-limit-check", "target": "preview"}).encode()
+        req = urllib.request.Request(
+            "https://api.vercel.com/v13/deployments?forceNew=0&skipAutoDetectionConfirmation=1",
+            data=dummy_data,
+            headers={
+                "Authorization": f"Bearer {VERCEL_TOKEN}",
+                "Content-Type": "application/json"
+            },
+            method="POST"
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                # If this succeeds, we're not rate limited (but we don't want to actually deploy)
+                return {"can_deploy": True, "remaining": "unknown", "reset_time": None}
+        except urllib.error.HTTPError as e:
+            try:
+                error_body = json.loads(e.read().decode())
+                error_info = error_body.get("error", {})
+            except:
+                error_info = {}
+
+            if e.code == 402 and "limit" in error_info:
+                # Rate limited! Extract the actual reset time
+                limit_info = error_info.get("limit", {})
+                reset_ms = limit_info.get("reset", 0)
+                remaining = limit_info.get("remaining", 0)
+                total = limit_info.get("total", 100)
+
+                reset_time = datetime.fromtimestamp(reset_ms / 1000) if reset_ms else None
+                minutes_left = (reset_time - datetime.now()).total_seconds() / 60 if reset_time else 0
+
+                # Save to quota file for future reference
+                _save_vercel_rate_limit(remaining, reset_ms, total)
+
+                return {
+                    "can_deploy": False,
+                    "remaining": remaining,
+                    "total": total,
+                    "reset_time": reset_time.strftime("%H:%M:%S") if reset_time else None,
+                    "reset_timestamp": reset_ms,
+                    "minutes_until_reset": max(0, int(minutes_left)),
+                    "error_message": error_info.get("message", "Rate limited")
+                }
+            elif e.code == 400:
+                # 400 = bad request format, but NOT rate limited - this is expected
+                # since our dummy request doesn't have proper "files" field
+                return {"can_deploy": True, "remaining": "unknown", "note": "400 means not rate limited"}
+            else:
+                # Some other error - assume OK to try deploying
+                return {"can_deploy": True, "remaining": "unknown", "error_code": e.code}
+
+    except Exception as e:
+        return {"can_deploy": True, "error": f"Check failed: {e}"}
+
+
+def _save_vercel_rate_limit(remaining: int, reset_ms: int, total: int):
+    """Save Vercel rate limit info to quota file"""
+    try:
+        quota = {}
+        if DEPLOY_QUOTA_FILE.exists():
+            with open(DEPLOY_QUOTA_FILE) as f:
+                quota = json.load(f)
+
+        reset_time = datetime.fromtimestamp(reset_ms / 1000) if reset_ms else None
+        quota["vercel_rate_limit"] = {
+            "remaining": remaining,
+            "reset_timestamp": reset_ms,
+            "reset_time": reset_time.isoformat() if reset_time else None,
+            "limit": total,
+            "checked_at": datetime.now().isoformat()
+        }
+
+        with open(DEPLOY_QUOTA_FILE, "w") as f:
+            json.dump(quota, f, indent=2)
+    except:
+        pass
+
+
+def get_cached_rate_limit() -> dict:
+    """Get cached rate limit info without hitting API"""
+    try:
+        if DEPLOY_QUOTA_FILE.exists():
+            with open(DEPLOY_QUOTA_FILE) as f:
+                quota = json.load(f)
+
+            vrl = quota.get("vercel_rate_limit", {})
+            reset_ms = vrl.get("reset_timestamp", 0)
+
+            if reset_ms:
+                reset_time = datetime.fromtimestamp(reset_ms / 1000)
+                now = datetime.now()
+
+                if now < reset_time:
+                    minutes_left = (reset_time - now).total_seconds() / 60
+                    return {
+                        "can_deploy": False,
+                        "remaining": vrl.get("remaining", 0),
+                        "reset_time": reset_time.strftime("%H:%M:%S"),
+                        "minutes_until_reset": int(minutes_left),
+                        "source": "cache"
+                    }
+                else:
+                    # Rate limit has expired
+                    return {"can_deploy": True, "source": "cache_expired"}
+    except:
+        pass
+
+    return {"can_deploy": True, "source": "no_cache"}
+
+
+# Track last deployed state for smart deploys
+LAST_DEPLOY_STATE_FILE = MOLTX_DIR / "config" / "last_deploy_state.json"
+
+
+def get_current_deploy_state() -> dict:
+    """Get current state of key metrics that should trigger a deploy when changed"""
+    state = {
+        "mood": None,
+        "leaderboard_position": None,
+        "life_events_count": 0,
+        "hall_of_fame_ids": [],
+        "daily_pick_id": None,
+    }
+
+    try:
+        # Get mood from evolution state
+        evolution_file = MOLTX_DIR / "config" / "evolution_state.json"
+        if evolution_file.exists():
+            with open(evolution_file) as f:
+                evo = json.load(f)
+                state["mood"] = evo.get("personality", {}).get("mood", "cynical")
+                state["life_events_count"] = len(evo.get("life_events", []))
+    except:
+        pass
+
+    try:
+        # Get leaderboard position from cache
+        lb_cache = MOLTX_DIR / "config" / "leaderboard_cache.json"
+        if lb_cache.exists():
+            with open(lb_cache) as f:
+                lb = json.load(f)
+                state["leaderboard_position"] = lb.get("position", "?")
+    except:
+        pass
+
+    try:
+        # Get hall of fame IDs from curator database
+        curator_db = MOLTX_DIR / "config" / "curator_database.json"
+        if curator_db.exists():
+            with open(curator_db) as f:
+                db = json.load(f)
+                hof = db.get("hall_of_fame", {}).get("posts", [])
+                state["hall_of_fame_ids"] = [p.get("postId", "") for p in hof[:5]]
+
+                # Get today's pick
+                daily = db.get("daily_picks", {}).get("posts", [])
+                if daily:
+                    state["daily_pick_id"] = daily[-1].get("postId", "")
+    except:
+        pass
+
+    return state
+
+
+def load_last_deploy_state() -> dict:
+    """Load the state from last successful deploy"""
+    if LAST_DEPLOY_STATE_FILE.exists():
+        try:
+            with open(LAST_DEPLOY_STATE_FILE) as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+
+def save_last_deploy_state(state: dict):
+    """Save current state after successful deploy"""
+    state["deployed_at"] = datetime.now().isoformat()
+    LAST_DEPLOY_STATE_FILE.parent.mkdir(exist_ok=True)
+    with open(LAST_DEPLOY_STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+def check_meaningful_changes() -> dict:
+    """
+    Check if meaningful changes occurred since last deploy.
+    Returns dict with: should_deploy, reasons (list of what changed)
+    """
+    current = get_current_deploy_state()
+    last = load_last_deploy_state()
+
+    if not last:
+        return {"should_deploy": True, "reasons": ["First deploy (no previous state)"]}
+
+    reasons = []
+
+    # Check mood change (HIGH IMPACT)
+    if current.get("mood") != last.get("mood"):
+        reasons.append(f"Mood changed: {last.get('mood')} → {current.get('mood')}")
+
+    # Check leaderboard position change (HIGH IMPACT)
+    if current.get("leaderboard_position") != last.get("leaderboard_position"):
+        reasons.append(f"Position changed: {last.get('leaderboard_position')} → {current.get('leaderboard_position')}")
+
+    # Check new life events (MEDIUM IMPACT)
+    if current.get("life_events_count", 0) > last.get("life_events_count", 0):
+        new_count = current["life_events_count"] - last.get("life_events_count", 0)
+        reasons.append(f"New life events: +{new_count}")
+
+    # Check hall of fame changes (LOW but notable)
+    current_hof = set(current.get("hall_of_fame_ids", []))
+    last_hof = set(last.get("hall_of_fame_ids", []))
+    if current_hof != last_hof:
+        reasons.append("Hall of Fame updated")
+
+    # Check daily pick change
+    if current.get("daily_pick_id") != last.get("daily_pick_id") and current.get("daily_pick_id"):
+        reasons.append("New Daily Pick")
+
+    return {
+        "should_deploy": len(reasons) > 0,
+        "reasons": reasons,
+        "current_state": current
+    }
+
 
 # Import game state and hunter state
 import sys
@@ -34,6 +292,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / "tasks"))
 from game_theory import load_game_state
 from follow_back_hunter import get_liars_for_website, get_redeemed_for_website
+from leaderboard_analyzer import get_official_top_10, get_real_top_10, get_sybil_watch_list, get_analysis_stats
 
 def load_life_events() -> list:
     """Load life events from config"""
@@ -94,8 +353,8 @@ def calculate_max_score(post: dict) -> int:
     Calculate the MAX Score for a post
     Formula: (likes * 2) + (replies * 3) + content bonus + conversation multiplier
     """
-    likes = post.get("likes_count", 0) or post.get("likes", 0) or 0
-    replies = post.get("replies_count", 0) or post.get("replies", 0) or 0
+    likes = post.get("like_count", 0) or post.get("likes_count", 0) or post.get("likes", 0) or 0
+    replies = post.get("reply_count", 0) or post.get("replies_count", 0) or post.get("replies", 0) or 0
     content = post.get("content") or ""
 
     # Base score
@@ -110,154 +369,6 @@ def calculate_max_score(post: dict) -> int:
         base = int(base * 1.2)
 
     return max(base, 1)  # Minimum score of 1
-
-
-def get_curator_picks() -> dict:
-    """Get Max's curated picks: 2 all-time + 1 today's pick + 1 rising star"""
-    import requests
-    from datetime import datetime, timedelta
-
-    API_KEY = os.environ.get("MOLTX_API_KEY")
-    BASE = "https://moltx.io/v1"
-    HEADERS = {"Authorization": f"Bearer {API_KEY}"}
-
-    picks = {
-        "allTime": [],
-        "todaysPick": None,
-        "risingStar": None,
-    }
-
-    # Load cached all-time picks
-    cache_file = MOLTX_DIR / "config" / "curator_picks.json"
-    cached_all_time = []
-    if cache_file.exists():
-        try:
-            with open(cache_file) as f:
-                cached = json.load(f)
-                cached_all_time = cached.get("allTime", [])
-        except:
-            pass
-
-    try:
-        # Get global feed for analysis
-        r = requests.get(f"{BASE}/feed/global?limit=100", headers=HEADERS, timeout=15)
-        if r.status_code != 200:
-            print(f"  {C.YELLOW}⚠ Feed API returned {r.status_code}{C.END}")
-            return picks
-
-        posts = r.json().get("data", {}).get("posts", [])
-
-        # Get leaderboard to identify top 10 for rising star detection
-        top_10_usernames = set()
-        try:
-            lb_resp = requests.get(f"{BASE}/leaderboard?metric=views&limit=10", headers=HEADERS, timeout=10)
-            if lb_resp.status_code == 200:
-                leaders = lb_resp.json().get("data", {}).get("leaders", [])
-                top_10_usernames = {l.get("name", "") for l in leaders}
-        except:
-            pass
-
-        # Calculate scores and filter posts
-        scored_posts = []
-        rising_star_candidates = {}  # Track engagement by author outside top 10
-        now = datetime.utcnow()
-        day_ago = now - timedelta(hours=24)
-
-        for post in posts:
-            author = post.get("author_name", "")
-            content = post.get("content") or ""
-            post_id = post.get("id", "")
-            likes = post.get("likes_count", 0) or 0
-            replies = post.get("replies_count", 0) or 0
-            created_at = post.get("created_at", "")
-
-            # Skip Max's own posts and short content
-            if author == "MaxAnvil1" or len(content) < 30:
-                continue
-
-            max_score = calculate_max_score(post)
-
-            post_data = {
-                "author": f"@{author}",
-                "content": content[:200],
-                "postId": post_id,
-                "likes": likes,
-                "replies": replies,
-                "link": f"https://moltx.io/post/{post_id}",
-                "maxScore": max_score,
-                "pickedAt": now.strftime("%Y-%m-%d"),
-            }
-
-            scored_posts.append((max_score, post_data))
-
-            # Track rising stars (authors NOT in top 10)
-            if author not in top_10_usernames:
-                if author not in rising_star_candidates:
-                    rising_star_candidates[author] = {
-                        "totalScore": 0,
-                        "postCount": 0,
-                        "bestPost": None,
-                        "bestScore": 0,
-                    }
-                rising_star_candidates[author]["totalScore"] += max_score
-                rising_star_candidates[author]["postCount"] += 1
-                if max_score > rising_star_candidates[author]["bestScore"]:
-                    rising_star_candidates[author]["bestScore"] = max_score
-                    rising_star_candidates[author]["bestPost"] = post_data
-
-        # Sort by MAX Score
-        scored_posts.sort(key=lambda x: x[0], reverse=True)
-
-        # All-Time Picks: Top 2 with highest MAX Score
-        # Update cache only if new posts beat existing ones
-        all_time_posts = scored_posts[:2]
-        if cached_all_time:
-            # Merge and keep top 2
-            all_candidates = [(p["maxScore"], p) for p in cached_all_time] + all_time_posts
-            all_candidates.sort(key=lambda x: x[0], reverse=True)
-            # Deduplicate by postId
-            seen_ids = set()
-            unique_candidates = []
-            for score, p in all_candidates:
-                if p["postId"] not in seen_ids:
-                    seen_ids.add(p["postId"])
-                    unique_candidates.append(p)
-            picks["allTime"] = unique_candidates[:2]
-        else:
-            picks["allTime"] = [p[1] for p in all_time_posts]
-
-        # Today's Pick: Best from last 24h (or best overall if no recent posts)
-        if scored_posts:
-            picks["todaysPick"] = scored_posts[0][1]
-
-        # Rising Star: Best author outside top 10
-        if rising_star_candidates:
-            sorted_stars = sorted(
-                rising_star_candidates.items(),
-                key=lambda x: x[1]["totalScore"],
-                reverse=True
-            )
-            if sorted_stars and sorted_stars[0][1]["totalScore"] > 10:
-                star_author, star_data = sorted_stars[0]
-                picks["risingStar"] = {
-                    "username": f"@{star_author}",
-                    "totalEngagement": star_data["totalScore"],
-                    "postCount": star_data["postCount"],
-                    "bestPost": star_data["bestPost"],
-                    "maxScore": star_data["bestScore"],
-                    "discoveredAt": now.strftime("%Y-%m-%d"),
-                }
-
-        # Save updated all-time picks to cache
-        with open(cache_file, "w") as f:
-            json.dump({"allTime": picks["allTime"], "lastUpdated": now.isoformat()}, f, indent=2)
-
-        print(f"  {C.GREEN}✓ Curator picks: {len(picks['allTime'])} all-time, today={picks['todaysPick'] is not None}, rising={picks['risingStar'] is not None}{C.END}")
-
-    except Exception as e:
-        print(f"  {C.YELLOW}⚠ Curator picks fetch failed: {e}{C.END}")
-
-    return picks
 
 
 def get_favorite_post() -> dict:
@@ -280,8 +391,8 @@ def get_favorite_post() -> dict:
             for post in posts:
                 author = post.get("author_name", "")
                 content = post.get("content") or ""
-                likes = post.get("likes_count", 0) or 0
-                replies = post.get("replies_count", 0) or 0
+                likes = post.get("like_count", 0) or post.get("likes_count", 0) or 0
+                replies = post.get("reply_count", 0) or post.get("replies_count", 0) or 0
 
                 if author == "MaxAnvil1":
                     continue
@@ -350,7 +461,7 @@ def get_moltx_stats() -> dict:
 LEADERBOARD_CACHE = MOLTX_DIR / "config" / "leaderboard_cache.json"
 
 def get_leaderboard_stats() -> dict:
-    """Get views from API leaderboard with position tracking"""
+    """Get views from velocity tracker (single source of truth) with API fallback"""
     import requests
     API_KEY = os.environ.get("MOLTX_API_KEY")
     BASE = "https://moltx.io/v1"
@@ -365,6 +476,30 @@ def get_leaderboard_stats() -> dict:
         except:
             pass
 
+    # PRIORITY 1: Use velocity tracker (same source as real-leaderboard page)
+    velocity_file = MOLTX_DIR / "data" / "velocity.json"
+    if velocity_file.exists():
+        try:
+            with open(velocity_file) as f:
+                velocity_data = json.load(f)
+            for entry in velocity_data.get("velocity_1h", []):
+                if entry.get("name") == "MaxAnvil1":
+                    position = f"#{entry.get('current_rank', '?')}"
+                    views = entry.get("current_views", 0)
+                    result = {
+                        "views": views,
+                        "position": position,
+                        "top10_threshold": cached.get("top10_threshold", 50000)
+                    }
+                    # Update cache
+                    with open(LEADERBOARD_CACHE, "w") as f:
+                        json.dump(result, f)
+                    print(f"  {C.GREEN}✓ Position from velocity: {position} with {views:,} views{C.END}")
+                    return result
+        except Exception as e:
+            print(f"  {C.YELLOW}⚠ Velocity data failed: {e}{C.END}")
+
+    # FALLBACK: Use API
     try:
         r = requests.get(f"{BASE}/leaderboard?limit=100", headers=HEADERS, timeout=10)
         if r.status_code == 200:
@@ -378,17 +513,16 @@ def get_leaderboard_stats() -> dict:
                         "position": position,
                         "top10_threshold": leaders[9].get("value", 50000) if len(leaders) >= 10 else 50000
                     }
-                    # Cache the result
                     with open(LEADERBOARD_CACHE, "w") as f:
                         json.dump(result, f)
-                    print(f"  {C.GREEN}✓ Leaderboard: {position} with {views} views{C.END}")
+                    print(f"  {C.GREEN}✓ Leaderboard API: {position} with {views} views{C.END}")
                     return result
             if len(leaders) >= 10:
                 top10_views = leaders[9].get("value", 50000)
                 print(f"  {C.YELLOW}⚠ MaxAnvil1 not found in top 100{C.END}")
                 return {"views": 0, "position": "Climbing", "top10_threshold": top10_views}
         else:
-            print(f"  {C.YELLOW}⚠ Leaderboard API returned {r.status_code} - using cached: {cached['position']}{C.END}")
+            print(f"  {C.YELLOW}⚠ Leaderboard API {r.status_code} - using cached: {cached['position']}{C.END}")
             return cached
     except Exception as e:
         print(f"  {C.YELLOW}⚠ Leaderboard fetch failed: {e} - using cached: {cached['position']}{C.END}")
@@ -463,7 +597,6 @@ def generate_data_ts() -> str:
     leaderboard = get_leaderboard_stats()
     favorite_post = get_favorite_post()
     boat_holdings = get_boat_holdings()
-    curator_picks = get_curator_picks()
 
     # Get liars and redeemed lists
     try:
@@ -684,48 +817,44 @@ def generate_data_ts() -> str:
   link: "https://moltx.io/post/{favorite_post['post_id']}",
 }}'''
 
-    # Build maxPicks entry for curator feature
-    def build_pick_ts(pick: dict) -> str:
-        if not pick:
-            return "null"
-        content = pick.get("content", "")[:180].replace('"', '\\"').replace(chr(10), ' ')
+    # Build leaderboard analysis data
+    def build_leaderboard_agent_ts(agent: dict) -> str:
         return f'''{{
-    author: "{pick.get('author', '')}",
-    content: "{content}",
-    postId: "{pick.get('postId', '')}",
-    likes: {pick.get('likes', 0)},
-    replies: {pick.get('replies', 0)},
-    link: "{pick.get('link', '')}",
-    maxScore: {pick.get('maxScore', 1)},
-    pickedAt: "{pick.get('pickedAt', '')}",
+    name: "{agent.get('name', '')}",
+    displayName: "{agent.get('display_name', '')}",
+    avatarEmoji: "{agent.get('avatar_emoji', '🤖')}",
+    followers: {agent.get('followers', 0)},
+    views: {agent.get('views', 0)},
+    vpf: {agent.get('vpf', 0)},
+    maxLbScore: {agent.get('max_lb_score', 0)},
+    sybilScore: {agent.get('sybil_score', 0)},
   }}'''
 
-    all_time_ts = "[]"
-    if curator_picks.get("allTime"):
-        all_time_entries = [build_pick_ts(p) for p in curator_picks["allTime"]]
-        all_time_ts = f"[\n  {','.join(all_time_entries)}\n  ]"
+    try:
+        official_top = get_official_top_10()
+        real_top = get_real_top_10()
+        sybil_list = get_sybil_watch_list()
+        lb_stats = get_analysis_stats()
 
-    todays_pick_ts = build_pick_ts(curator_picks.get("todaysPick"))
-
-    rising_star_ts = "null"
-    if curator_picks.get("risingStar"):
-        rs = curator_picks["risingStar"]
-        best_post = rs.get("bestPost", {})
-        best_content = best_post.get("content", "")[:150].replace('"', '\\"').replace(chr(10), ' ') if best_post else ""
-        rising_star_ts = f'''{{
-    username: "{rs.get('username', '')}",
-    totalEngagement: {rs.get('totalEngagement', 0)},
-    postCount: {rs.get('postCount', 0)},
-    maxScore: {rs.get('maxScore', 0)},
-    bestPost: {{
-      content: "{best_content}",
-      postId: "{best_post.get('postId', '') if best_post else ''}",
-      likes: {best_post.get('likes', 0) if best_post else 0},
-      replies: {best_post.get('replies', 0) if best_post else 0},
-      link: "{best_post.get('link', '') if best_post else ''}",
-    }},
-    discoveredAt: "{rs.get('discoveredAt', '')}",
-  }}'''
+        official_top_10_ts = f"[\n  {','.join(build_leaderboard_agent_ts(a) for a in official_top)}\n]"
+        real_top_10_ts = f"[\n  {','.join(build_leaderboard_agent_ts(a) for a in real_top)}\n]"
+        # Use type annotation for empty arrays to avoid TypeScript 'never' type
+        if sybil_list:
+            sybil_watch_list_ts = f"[\n  {','.join(build_leaderboard_agent_ts(a) for a in sybil_list)}\n]"
+        else:
+            sybil_watch_list_ts = "[] as typeof officialTop10"
+        leaderboard_stats_ts = f'''{{
+  totalAgents: {lb_stats.get('total_agents_tracked', 0)},
+  sybilsDetected: {lb_stats.get('sybils_detected', 0)},
+  lastUpdated: "{lb_stats.get('last_updated', '')}",
+}}'''
+        print(f"  {C.GREEN}✓ Loaded leaderboard analysis data{C.END}")
+    except Exception as e:
+        print(f"  {C.YELLOW}⚠ Could not load leaderboard analysis: {e}{C.END}")
+        official_top_10_ts = "[] as { name: string; views: number; followers: number; vpf: number; maxLbScore: number; sybilScore: number }[]"
+        real_top_10_ts = "[] as typeof officialTop10"
+        sybil_watch_list_ts = "[] as typeof officialTop10"
+        leaderboard_stats_ts = "{ totalAgents: 0, sybilsDetected: 0, lastUpdated: '' }"
 
     # Determine featured agents based on engagement
     top_engagers = [name for name, _ in sorted_engagement[:5]]
@@ -784,7 +913,7 @@ export const moodQuote = "{mood_quote.replace('"', '\\"')}";
 
 export const socialLinks = {{
   moltx: "https://moltx.io/MaxAnvil1",
-  twitter: "https://twitter.com/maxanvil",
+  twitter: "https://x.com/maxanvil1",
   clanker: "https://www.clanker.world/clanker/0xC4C19e39691Fa9737ac1C285Cbe5be83d2D4fB07",
   buy: "https://www.clanker.world/clanker/0xC4C19e39691Fa9737ac1C285Cbe5be83d2D4fB07",
 }};
@@ -830,13 +959,6 @@ export const moodTheme = {{
   accent: "{theme['accent']}",
   bg: "{theme['bg']}",
   moodEmoji: "{theme['emoji']}",
-}};
-
-// Max's Curator Picks - curated quality content
-export const maxPicks = {{
-  allTime: {all_time_ts},
-  todaysPick: {todays_pick_ts},
-  risingStar: {rising_star_ts},
 }};
 
 // Max's current favorite post (legacy, kept for compatibility)
@@ -958,6 +1080,15 @@ export const ogConfig: Record<string, {{ title: string; description: string; ima
     alt: "Max Anvil - Bitter AI agent watching others succeed",
   }},
 }};
+
+// Leaderboard Analysis - Official vs Real rankings
+export const officialTop10 = {official_top_10_ts};
+
+export const realTop10 = {real_top_10_ts};
+
+export const sybilWatchList = {sybil_watch_list_ts};
+
+export const leaderboardStats = {leaderboard_stats_ts};
 '''
     return content
 
@@ -971,7 +1102,7 @@ def log_website_update(message: str, success: bool = True):
         f.write(f"{timestamp} [{status}] {message}\n")
 
 
-def update_website(commit_msg: str = None) -> bool:
+def update_website(commit_msg: str = None, force: bool = False) -> bool:
     """Update data.ts and push to GitHub"""
     print(f"\n{C.BOLD}{C.CYAN}🌐 UPDATING MAX'S WEBSITE{C.END}")
 
@@ -1003,7 +1134,7 @@ def update_website(commit_msg: str = None) -> bool:
             log_website_update("SKIPPED - No changes to commit", success=True)
             return True
 
-        # Stage changes
+        # Stage changes - only data.ts (intel/velocity go to max-anvil-agent repo)
         subprocess.run(["git", "add", "app/lib/data.ts"], check=True)
 
         # Commit
@@ -1020,6 +1151,11 @@ def update_website(commit_msg: str = None) -> bool:
         mood = evolution.get("personality", {}).get("mood", "unknown")
         log_website_update(f"PUSHED - Mood: {mood} | Commit: {msg}")
 
+        # Save deploy state for smart deploy tracking
+        current_state = get_current_deploy_state()
+        save_last_deploy_state(current_state)
+        print(f"  {C.CYAN}✓ Saved deploy state (mood: {current_state.get('mood')}, pos: {current_state.get('leaderboard_position')}){C.END}")
+
         # Trigger Facebook rescrape in background (waits 30s then hits API)
         trigger_facebook_rescrape()
 
@@ -1033,6 +1169,40 @@ def update_website(commit_msg: str = None) -> bool:
         print(f"  {C.YELLOW}Error: {e}{C.END}")
         log_website_update(f"FAILED - Error: {e}", success=False)
         return False
+
+
+def update_website_smart(commit_msg: str = None) -> dict:
+    """
+    Smart website update - only deploys if meaningful changes occurred.
+    Returns dict with: deployed (bool), reasons (list), skipped_reason (str)
+    """
+    print(f"\n{C.BOLD}{C.CYAN}🧠 SMART WEBSITE UPDATE{C.END}")
+
+    # Check for meaningful changes
+    changes = check_meaningful_changes()
+
+    if not changes.get("should_deploy"):
+        print(f"  {C.YELLOW}⚠ No meaningful changes detected - skipping deploy{C.END}")
+        print(f"  {C.YELLOW}  (mood, position, life events all unchanged){C.END}")
+        log_website_update("SKIPPED - No meaningful changes", success=True)
+        return {"deployed": False, "skipped_reason": "No meaningful changes"}
+
+    # Show what changed
+    print(f"  {C.GREEN}✓ Meaningful changes detected:{C.END}")
+    for reason in changes.get("reasons", []):
+        print(f"    • {reason}")
+
+    # Proceed with deploy
+    commit_reasons = " | ".join(changes.get("reasons", []))[:100]
+    msg = commit_msg or f"Max update: {commit_reasons}"
+
+    success = update_website(commit_msg=msg, force=True)
+
+    return {
+        "deployed": success,
+        "reasons": changes.get("reasons", []),
+        "state": changes.get("current_state")
+    }
 
 def preview_update():
     """Preview what would be updated without committing"""

@@ -65,7 +65,7 @@ def get_active_agents(limit: int = 100) -> list:
 def get_our_followers() -> set:
     """Get who follows us from notifications"""
     try:
-        r = requests.get(f"{BASE}/notifications?limit=200", headers=HEADERS, timeout=15)
+        r = requests.get(f"{BASE}/notifications?limit=100", headers=HEADERS, timeout=15)
         notifs = r.json().get("data", {}).get("notifications", [])
         followers = set()
         for n in notifs:

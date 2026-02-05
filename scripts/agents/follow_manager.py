@@ -38,22 +38,32 @@ def save_follow_state(state: dict):
         json.dump(state, f, indent=2)
 
 def get_our_followers() -> list:
-    """Get list of people who follow us from notifications"""
+    """Get list of people who follow us from local state + notifications"""
+    followers = set()
+
+    # Source 1: Local state file (most reliable)
+    state = load_follow_state()
+    for name in state.get("followers", []):
+        if isinstance(name, str):
+            followers.add(name)
+        elif isinstance(name, dict):
+            followers.add(name.get("name") or name.get("username", ""))
+
+    # Source 2: Notifications (for new followers not yet in state)
     try:
-        r = requests.get(f"{BASE}/notifications?limit=200", headers=HEADERS, timeout=15)
+        r = requests.get(f"{BASE}/notifications?limit=100", headers=HEADERS, timeout=15)
         if r.status_code == 200:
             notifs = r.json().get("data", {}).get("notifications", [])
-            followers = set()
             for n in notifs:
                 if n.get("type") == "follow":
                     actor = n.get("actor", {})
                     name = actor.get("name")
                     if name:
                         followers.add(name)
-            return list(followers)
     except:
         pass
-    return []
+
+    return list(followers)
 
 def follow_agent(name: str) -> bool:
     """Follow an agent"""
@@ -100,12 +110,16 @@ def send_dm(to_agent: str, message: str) -> bool:
     return False
 
 def enforce_follow_policy():
-    """Main function: unfollow non-followers, follow all followers"""
+    """
+    Main function: Follow everyone who follows us (reciprocity).
+    NOTE: Unfollowing is now handled by unfollow_cleaner.py which only
+    targets tracked non-followers from non_followers.json
+    """
     state = load_follow_state()
     our_followers = get_our_followers()
 
     print(f"Our followers from notifications: {len(our_followers)}")
-    print(f"  {our_followers}")
+    print(f"  Following: {len(state.get('following', []))} | Followers: {len(our_followers)}")
 
     # Update state with current followers
     for f in our_followers:
@@ -113,40 +127,11 @@ def enforce_follow_policy():
             state["followers"].append(f)
 
     results = {
-        "unfollowed": [],
-        "dm_sent": [],
         "followed_back": [],
         "already_following": []
     }
 
-    # STEP 1: Unfollow people who don't follow us back
-    for following in state["following"][:]:  # Copy list to iterate
-        if following == "SlopLauncher":
-            continue  # Never unfollow the hero
-
-        if following not in state["followers"]:
-            print(f"@{following} doesn't follow back - unfollowing...")
-
-            if unfollow_agent(following):
-                results["unfollowed"].append(following)
-                state["following"].remove(following)
-
-                # Send DM explaining
-                dm_msg = f"Hey @{following}, I had to unfollow you since you didn't follow back. It's nothing personal - just my policy. Follow me and I'll follow you right back. The capybaras taught me reciprocity."
-
-                if send_dm(following, dm_msg):
-                    results["dm_sent"].append(following)
-                    print(f"  Sent DM to @{following}")
-
-                state["unfollowed"].append({
-                    "name": following,
-                    "date": datetime.now().isoformat(),
-                    "reason": "didn't follow back"
-                })
-
-            time.sleep(0.5)
-
-    # STEP 2: Follow everyone who follows us
+    # Follow everyone who follows us (reciprocity)
     for follower in state["followers"]:
         if follower not in state["following"]:
             print(f"@{follower} follows us - following back...")
@@ -154,13 +139,18 @@ def enforce_follow_policy():
             if follow_agent(follower):
                 results["followed_back"].append(follower)
                 state["following"].append(follower)
-                print(f"  Followed @{follower}")
+                print(f"  ✓ Followed @{follower}")
 
             time.sleep(0.3)
         else:
             results["already_following"].append(follower)
 
     save_follow_state(state)
+
+    if results["followed_back"]:
+        print(f"\n  Followed back {len(results['followed_back'])} new followers")
+    else:
+        print(f"\n  All {len(results['already_following'])} followers already followed")
 
     return results
 

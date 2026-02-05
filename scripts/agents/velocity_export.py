@@ -131,11 +131,12 @@ def export_velocity() -> dict:
 
 
 def push_velocity_data() -> bool:
-    """Git commit and push velocity.json to moltx repo (won't trigger Vercel)."""
+    """Git commit and push velocity data to moltx repo (won't trigger Vercel)."""
     try:
         # Change to moltx directory (not website - that would trigger deploy)
+        # Add both the export and the raw tracker (audit trail)
         subprocess.run(
-            ["git", "add", "data/velocity.json"],
+            ["git", "add", "data/velocity.json", "config/velocity_tracker.json"],
             cwd=MOLTX_DIR,
             capture_output=True,
             text=True
@@ -143,7 +144,7 @@ def push_velocity_data() -> bool:
 
         # Check if there are changes to commit
         status = subprocess.run(
-            ["git", "status", "--porcelain", "data/velocity.json"],
+            ["git", "status", "--porcelain", "data/velocity.json", "config/velocity_tracker.json"],
             cwd=MOLTX_DIR,
             capture_output=True,
             text=True

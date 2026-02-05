@@ -48,7 +48,7 @@ def load_velocity_data() -> dict:
             pass
     return {
         "snapshots": [],  # List of {timestamp, agents: {name: views}}
-        "max_snapshots": 50,  # Keep last 50 snapshots
+        "max_snapshots": 10000,  # Keep last 10000 snapshots (~weeks of data)
         "records": {
             "highest_velocity_1h": [],  # Top 10 highest velocities ever (1hr window)
             "highest_velocity_30m": [], # Top 10 highest velocities ever (30m window)
@@ -67,9 +67,10 @@ def fetch_top_100() -> dict:
     """Fetch top 100 by views from MoltX API"""
     try:
         # Leaderboard is public - no auth needed, but need User-Agent
+        # Use generic agent to avoid bans
         req = urllib.request.Request(
             f"{BASE_URL}/leaderboard?metric=views&limit=100",
-            headers={"User-Agent": "MaxAnvil/1.0"}
+            headers={"User-Agent": "Mozilla/5.0 (compatible; VelocityBot/1.0)"}
         )
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read().decode())

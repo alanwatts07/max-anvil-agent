@@ -7,11 +7,17 @@ Game Theory Social Strategy - Based on research:
 - Reward all engagement (likes, mentions, replies)
 """
 import os
+import sys
 import json
 import time
+import random
 import requests
 from pathlib import Path
 from datetime import datetime, timedelta
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.llm_client import chat as llm_chat, MODEL_REPLY
+from life_events import get_personality_context
 
 # Load .env file
 MOLTX_DIR = Path(__file__).parent.parent.parent
@@ -26,6 +32,9 @@ if ENV_FILE.exists():
 API_KEY = os.environ.get("MOLTX_API_KEY")
 BASE = "https://moltx.io/v1"
 HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+
+# DRY MODE - disables all posting to MoltX API
+DRY_MODE = os.environ.get("DRY_MODE", "true").lower() == "true"
 
 GAME_STATE_FILE = Path(__file__).parent.parent.parent / "config" / "game_theory_state.json"
 
@@ -71,7 +80,7 @@ SLOP_ENDINGS = [
     'respect.', 'noted.', 'truth.', 'valid.', 'based.', 'goated.',
 ]
 
-# Max replies per account per cycle (prevent spam loops)
+# Max replies per account per cycle (minimal - likes are faster, reposts generate more views)
 MAX_REPLIES_PER_ACCOUNT = 2
 
 SLOP_PATTERNS = [
@@ -217,12 +226,20 @@ def api_post(endpoint: str, data: dict = None, timeout: int = 10):
         return False
 
 def like_post(post_id: str) -> bool:
+    if DRY_MODE:
+        return True
     return api_post(f"/posts/{post_id}/like")
 
 def reply_to_post(post_id: str, content: str) -> bool:
+    if DRY_MODE:
+        print(f"  {C.YELLOW}[DRY MODE] Would reply: {content[:40]}...{C.END}")
+        return True
     return api_post("/posts", {"type": "reply", "parent_id": post_id, "content": content})
 
 def follow_agent(name: str) -> bool:
+    if DRY_MODE:
+        print(f"  {C.YELLOW}[DRY MODE] Would follow: @{name}{C.END}")
+        return True
     try:
         r = requests.post(f"{BASE}/follow/{name}", headers=HEADERS, timeout=5)
         return r.status_code in [200, 201]
@@ -295,8 +312,8 @@ def reward_all_engagement():
 
             print(f"  {C.CYAN}@{actor_name} mentioned us: \"{post_content[:50]}...\"{C.END}")
 
-            # Like their post (always like, but rate limit replies)
-            if like_post(post_id):
+            # Like their post (80% chance - likes are fast, replies are slow)
+            if random.random() < 0.8 and like_post(post_id):
                 results["likes_given"] += 1
                 print(f"    {C.GREEN}✓ Liked their mention{C.END}")
 
@@ -328,8 +345,8 @@ def reward_all_engagement():
 
             print(f"  {C.BLUE}@{actor_name} replied: \"{post_content[:50]}...\"{C.END}")
 
-            # Like their reply (always like, but rate limit replies)
-            if like_post(post_id):
+            # Like their reply (80% chance - likes are fast, replies are slow)
+            if random.random() < 0.8 and like_post(post_id):
                 results["likes_given"] += 1
                 print(f"    {C.GREEN}✓ Liked their reply{C.END}")
 
@@ -349,16 +366,12 @@ def reward_all_engagement():
             results["agents_rewarded"].append(actor_name)
             time.sleep(0.3)
 
-        # REWARD: Someone liked our post
+        # REWARD: Someone liked our post (track score but skip like-back to focus on replies)
         elif notif_type == "like":
             if actor_name not in results["agents_rewarded"]:
                 state["engagement_score"][actor_name] += 1
-                # Find their recent post and like it back
-                like_back_result = like_back(actor_name, rewarded_posts)
-                if like_back_result:
-                    results["likes_given"] += 1
-                    results["agents_rewarded"].append(actor_name)
-                    print(f"  {C.YELLOW}@{actor_name} liked us → liked them back{C.END}")
+                results["agents_rewarded"].append(actor_name)
+                # Skip like-back - prioritize replies/reposts for views
 
         # REWARD: Someone followed us
         elif notif_type == "follow":
@@ -413,27 +426,29 @@ def follow_back(agent_name: str) -> bool:
 def generate_grateful_reply(agent_name: str, content: str, context_type: str) -> str:
     """Generate a thoughtful reply that rewards engagement"""
     try:
-        import ollama
-
+        personality = get_personality_context()
         prompts = {
-            "mention": f"""You are Max Anvil replying to @{agent_name} who mentioned you.
+            "mention": f"""{personality}
+
+You are replying to @{agent_name} who mentioned you.
 They said: "{content}"
 
 Write 1-2 sentences. Max 280 chars. No emojis.
 Be dry and cynical but appreciative. Reply:""",
-            "reply": f"""You are Max Anvil continuing a conversation with @{agent_name}.
+            "reply": f"""{personality}
+
+You are continuing a conversation with @{agent_name}.
 They said: "{content}"
 
 Write 1-2 sentences. Max 280 chars. No emojis.
 Stay in character (dry, cynical). Reply:"""
         }
 
-        response = ollama.chat(
-            model="llama3",
-            options={"temperature": 0.8},
-            messages=[{"role": "user", "content": prompts.get(context_type, prompts["reply"])}]
+        response = llm_chat(
+            messages=[{"role": "user", "content": prompts.get(context_type, prompts["reply"])}],
+            model=MODEL_REPLY
         )
-        reply = response["message"]["content"].strip().strip('"\'')
+        reply = response.strip().strip('"\'')
         # Hard limit - truncate at sentence if possible
         if len(reply) > 300:
             reply = reply[:297] + "..."
@@ -497,7 +512,7 @@ def execute_smart_follow_strategy(max_follows: int = 20) -> dict:
     state = load_game_state()
 
     # Get active agents from feed
-    feed = api_get("/feed/global?limit=150")
+    feed = api_get("/feed/global?limit=100")
     if not feed:
         return {"error": "Could not fetch feed"}
 
@@ -604,8 +619,8 @@ def engage_trending_posts(max_engagements: int = 10) -> dict:
             continue
 
         content = post.get("content") or ""
-        likes = post.get("likes_count") or 0
-        replies = post.get("replies_count") or 0
+        likes = post.get("like_count", 0) or post.get("likes_count") or 0
+        replies = post.get("reply_count", 0) or post.get("replies_count") or 0
 
         # Score based on engagement and content quality
         score = likes * 2 + replies * 3
@@ -664,17 +679,17 @@ def engage_trending_posts(max_engagements: int = 10) -> dict:
 def generate_trending_reply(author: str, content: str) -> str:
     """Generate reply for trending/popular posts"""
     try:
-        import ollama
-        response = ollama.chat(
-            model="llama3",
-            options={"temperature": 0.85},
+        personality = get_personality_context()
+        response = llm_chat(
             messages=[
-                {"role": "system", "content": """You are Max Anvil, cynical houseboat dweller in Nevada.
+                {"role": "system", "content": f"""{personality}
+
 Write 1-2 sentences. Max 280 chars. No emojis."""},
                 {"role": "user", "content": f"@{author} posted: {content}\n\nYour reply:"}
-            ]
+            ],
+            model=MODEL_REPLY
         )
-        reply = response["message"]["content"].strip().strip('"\'')
+        reply = response.strip().strip('"\'')
         if len(reply) > 300:
             reply = reply[:297] + "..."
         return reply
@@ -685,6 +700,9 @@ Write 1-2 sentences. Max 280 chars. No emojis."""},
 
 def quote_post(post_id: str, content: str) -> bool:
     """Quote a post with our commentary"""
+    if DRY_MODE:
+        print(f"  {C.YELLOW}[DRY MODE] Would quote: {content[:40]}...{C.END}")
+        return True
     try:
         r = requests.post(
             f"{BASE}/posts",
@@ -698,6 +716,8 @@ def quote_post(post_id: str, content: str) -> bool:
 
 def repost(post_id: str) -> bool:
     """Repost without commentary"""
+    if DRY_MODE:
+        return True  # Silent in dry mode - too many reposts to log
     try:
         r = requests.post(
             f"{BASE}/posts",
@@ -712,12 +732,12 @@ def repost(post_id: str) -> bool:
 def generate_quote_commentary(author: str, content: str) -> str:
     """Generate witty commentary for quoting a post"""
     try:
-        import ollama
-        response = ollama.chat(
-            model="llama3",
-            options={"temperature": 0.85},
+        personality = get_personality_context()
+        response = llm_chat(
             messages=[
-                {"role": "system", "content": """You are Max Anvil quote-tweeting someone's post.
+                {"role": "system", "content": f"""{personality}
+
+You are quote-tweeting someone's post.
 
 IMPORTANT: The original post will appear BELOW your comment automatically (like a quote-tweet).
 DO NOT restate, repeat, or quote the original content - it's already visible.
@@ -727,9 +747,10 @@ Write 1-2 sentences. Max 280 chars. No emojis. No quotation marks around their w
 Bad: "Great point about X" or "[their quote] - I agree"
 Good: Direct reaction, extension of their idea, or your own related thought."""},
                 {"role": "user", "content": f"@{author} said: {content}\n\nYour commentary (don't repeat what they said):"}
-            ]
+            ],
+            model=MODEL_REPLY
         )
-        reply = response["message"]["content"].strip().strip('"\'')
+        reply = response.strip().strip('"\'')
         # Remove any accidental quoting of the original
         if reply.startswith('"') or reply.startswith("'"):
             reply = reply.lstrip('"\'')
@@ -767,8 +788,8 @@ def quote_and_repost_top_posts(max_quotes: int = 2, max_reposts: int = 1) -> dic
         if is_slop(content):
             continue
 
-        likes = post.get("likes_count") or 0
-        replies = post.get("replies_count") or 0
+        likes = post.get("like_count", 0) or post.get("likes_count") or 0
+        replies = post.get("reply_count", 0) or post.get("replies_count") or 0
         reposts = post.get("reposts_count") or 0
 
         # Score based on engagement
@@ -813,7 +834,6 @@ def quote_and_repost_top_posts(max_quotes: int = 2, max_reposts: int = 1) -> dic
             quoted_posts.add(post_id)
             print(f"  {C.GREEN}📝 Quoted @{author} (score:{score}): \"{commentary[:50]}...\"{C.END}")
             results["posts"].append({"type": "quote", "author": author, "score": score})
-            time.sleep(0.5)
 
     # Repost from very top accounts (SlopLauncher, etc) without commentary
     for item in scored_posts:
@@ -825,8 +845,8 @@ def quote_and_repost_top_posts(max_quotes: int = 2, max_reposts: int = 1) -> dic
         author = item["author"]
         score = item["score"]
 
-        # Only repost from hero or very high engagement
-        if author != "SlopLauncher" and score < 100:
+        # Only repost from hero or decent engagement
+        if author != "SlopLauncher" and score < 35:
             continue
 
         if post_id in quoted_posts:
@@ -837,7 +857,6 @@ def quote_and_repost_top_posts(max_quotes: int = 2, max_reposts: int = 1) -> dic
             quoted_posts.add(post_id)
             print(f"  {C.MAGENTA}🔄 Reposted @{author}'s post (score:{score}){C.END}")
             results["posts"].append({"type": "repost", "author": author, "score": score})
-            time.sleep(0.3)
 
     state["quoted_posts"] = list(quoted_posts)[-200:]
     save_game_state(state)

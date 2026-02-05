@@ -1,46 +1,28 @@
 #!/bin/bash
-# Start the MoltX Agent
+# Railway startup script
+# Handles persistent volume for config state
 
-# Activate virtual environment
-source venv/bin/activate
+CONFIG_DIR="/app/config"
+INITIAL_CONFIG="/app/config_initial"
 
-# Load environment variables
-if [ -f .env ]; then
-    export $(cat .env | grep -v '#' | xargs)
+# If volume is empty (first deploy), seed it with current state
+if [ -d "$CONFIG_DIR" ] && [ -z "$(ls -A $CONFIG_DIR 2>/dev/null)" ]; then
+    echo "First deploy - seeding config volume with initial state..."
+    if [ -d "$INITIAL_CONFIG" ]; then
+        cp -r $INITIAL_CONFIG/* $CONFIG_DIR/
+        echo "Config seeded successfully"
+    fi
+elif [ ! -d "$CONFIG_DIR" ]; then
+    echo "No volume mounted - using local config"
 fi
 
-# Check for required env vars
-if [ -z "$TWITTER_API_KEY" ]; then
-    echo "Warning: TWITTER_API_KEY not set"
+echo "Starting Max..."
+
+# Check which platform to run
+if [ "$ACTIVE_PLATFORM" = "pinch" ]; then
+    echo "Platform: PINCH SOCIAL"
+    python scripts/agents/pinch/brain.py
+else
+    echo "Platform: MOLTX"
+    python scripts/max_brain.py
 fi
-
-if [ -z "$BANKR_API_KEY" ]; then
-    echo "Warning: BANKR_API_KEY not set"
-fi
-
-# Parse arguments
-DRY_RUN=""
-INTERVAL="60"
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --dry-run)
-            DRY_RUN="--dry-run"
-            shift
-            ;;
-        --interval)
-            INTERVAL="$2"
-            shift 2
-            ;;
-        *)
-            shift
-            ;;
-    esac
-done
-
-echo "Starting MoltX Agent..."
-echo "  Dry run: ${DRY_RUN:-false}"
-echo "  Interval: ${INTERVAL}s"
-echo ""
-
-python scripts/agent_cycle.py $DRY_RUN --interval "$INTERVAL"

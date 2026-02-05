@@ -1,7 +1,54 @@
 #!/usr/bin/env python3
 """
-Max Anvil's Brain - Integrates all sub-agents into one living system
-The capybara-raised, houseboat-dwelling agent comes to life
+Max Anvil's Brain v2.5 - The Living System
+==========================================
+
+WHAT MAX DOES EACH CYCLE (~10 min):
+
+PHASE 0: VELOCITY TRACKING
+  - Snapshot leaderboard positions and views
+  - Calculate views/hour for all agents
+  - Detect anomalies (view farming, sybils)
+
+PHASE 0.5: ORIGINAL POSTS (~8-12 per cycle)
+  - Velocity flex post (current rank + views/hour)
+  - Leaderboard position post
+  - Top 5 shoutout (20% chance) - celebrates fellow top 5 agents
+  - Callout post (calls out suspicious activity)
+  - Engagement post (always) - skills.md best practices
+  - Thoughtful post (70% chance) - personality-driven
+  - Evolution post (22% chance) - mood/character growth
+  - Curator spotlight (12% chance) - highlights quality content
+
+PHASE 1: GAME THEORY ENGINE
+  - Reward all engagement (like/reply to mentions)
+  - Quote & repost top posts (8 quotes, 35 reposts) - reposts get 20-30 views each!
+  - Engage trending posts (reduced - replies only get 4-7 views)
+
+PHASE 2: NETWORK GROWTH
+  - Follow back hunter (find reciprocal followers)
+  - Smart follow strategy (follow engaging agents)
+  - Unfollow cleaner (remove non-reciprocators)
+  - Reputation scanner (pattern detection every 3 cycles)
+  - Deep reputation scan (LLM analysis every 10 cycles)
+
+PHASE 3: INTELLIGENCE
+  - Mass ingest global feed to intel database
+  - Export intel + curator picks to GitHub
+  - Export velocity data to GitHub
+
+PHASE 4: WEBSITE SYNC (rate limited)
+  - Update maxanvil.com with current stats
+  - Only deploys on meaningful changes (mood, rank)
+
+RATE LIMITS (per hour):
+  - Originals (posts + quotes + reposts): 100
+  - Replies: 600
+  - Current usage: ~50-60 originals, ~50-70 replies
+
+DATA FLOW:
+  intel.db → intel.json → curator_picks.json → GitHub → Website
+  velocity_tracker → velocity.json → GitHub → Website
 """
 import os
 import sys
@@ -20,6 +67,15 @@ sys.path.insert(0, str(Path(__file__).parent / "tasks"))
 from research import suggest_post_topic, get_research_brief
 from trends import get_trend_report, find_engagement_opportunities
 from reply_crafter import craft_reply, craft_mention_reply
+# NEW: Import relationship engine (replaces scan_and_update_reputations, deep_scan_reputations)
+from relationship_engine import (
+    initialize as init_relationship_engine,
+    quick_metrics_update as relationship_metrics_update,
+    deep_relationship_analysis,
+    check_relationship_decay,
+    export_and_push_to_github as export_relationships_to_github,
+    recalculate_all_tiers
+)
 from socializer import socialize, discover_interesting_groups, get_friends_summary, load_social_state, save_social_state
 from market import get_market_summary, generate_market_take, get_price_alert
 from memory import (
@@ -59,6 +115,9 @@ from callout_post import create_callout_post
 from top10_shoutout import create_top10_shoutout
 from farm_detector import check_and_callout as detect_farmers
 from intel_export import run_export as export_intel_to_website
+from curator_database import export_to_website as export_curator_picks
+from engagement_post import create_and_post as create_engagement_post
+from crew_export import save_and_push as export_crew_data
 
 # Setup logging
 LOG_FILE = Path(__file__).parent.parent / "logs" / "max_brain.log"
@@ -90,39 +149,51 @@ HINTS_FILE = Path(__file__).parent.parent / "config" / "moltx_hints.json"
 # Cycle counter for periodic tasks
 CYCLE_COUNT = 0
 
+# DRY MODE - disables all posting to MoltX API (site updates still work)
+# Set to True when banned or testing
+DRY_MODE = os.environ.get("DRY_MODE", "true").lower() == "true"
+
 
 def print_startup_banner():
     """Print startup banner showing execution order"""
     banner = """
 ╔══════════════════════════════════════════════════════════════════╗
-║                    MAX ANVIL BRAIN v2.0                          ║
+║                    MAX ANVIL BRAIN v2.6                          ║
 ║              Capybara-raised. Landlocked. Unstoppable.           ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  CYCLE EXECUTION ORDER:                                          ║
 ║                                                                  ║
-║  Phase 0 │ Inbox Manager      │ DMs, mentions, notifications     ║
-║  Phase 1 │ Reciprocity Engine │ Reward all engagement first      ║
-║  Phase 2 │ Strategic Liker    │ Quality posts + SlopLauncher     ║
-║  Phase 3 │ Reply Crafter      │ Smart replies + trending engage  ║
-║  Phase 4 │ Follow Policy      │ Follow back new followers        ║
-║  Phase 5 │ Quote & Repost     │ Amplify high-value content       ║
-║  Phase 6 │ Content Generator  │ Original posts (15% $BOAT flex)  ║
-║  Phase 7 │ View Maximizer     │ Target top accounts for views    ║
-║  Phase 8 │ Follow-Back Hunter │ Track promises, DM liars [3rd]   ║
-║  Phase 8b│ Unfollow Cleaner   │ Prune non-reciprocal [5th/unhing]║
-║  Phase 9 │ Evolution          │ Mood shift + life events [22%]   ║
-║  Phase 10│ Curator Spotlight  │ Post about quality content [12%] ║
-║  Phase10b│ Callout Post       │ "Who Are You Really?" roast [10%]║
-║  Phase10c│ Top 10 Shoutout    │ Tag fellow top 10 members [8%]   ║
-║  Phase 11│ Website Sync       │ Push to maxanvil.com             ║
+║  Phase 0  │ Inbox Manager       │ DMs, mentions, notifications   ║
+║  Phase 0.5│ Promo Posts         │ Velocity/Flex/Shoutout/Callout ║
+║  Phase 0b │ Mass Ingest         │ Read feeds, generate views     ║
+║  Phase 1  │ Game Theory         │ Reciprocity - reward engagers  ║
+║  Phase 1b │ Farm Detector       │ Call out view farmers          ║
+║  Phase 2  │ Strategic Liker     │ Quality posts + SlopLauncher   ║
+║  Phase 3  │ Reply Crafter       │ Smart replies + trending       ║
+║  Phase 4  │ Follow Policy       │ Follow back new followers      ║
+║  Phase 5  │ Quote & Repost      │ Amplify high-value content     ║
+║  Phase 6  │ Content Generator   │ Original posts + life events   ║
+║  Phase 7  │ View Maximizer      │ Target top accounts for views  ║
+║  Phase 8  │ Follow-Back Hunter  │ Track promises [every 3rd]     ║
+║  Phase 8a │ Relationship Engine │ Metrics + tier updates [3rd]   ║
+║  Phase 8b │ Deep Analysis       │ LLM backstories [every 10th]   ║
+║  Phase 8c │ Crew Export         │ Push to GitHub [every 10th]    ║
+║  Phase 8d │ Unfollow Cleaner    │ Prune leeches [5th/unhinged]   ║
+║  Phase 8e │ Leaderboard Promo   │ Real Leaderboard post [20%]    ║
+║  Phase 9  │ Evolution           │ Mood shift + personality [22%] ║
+║  Phase 10 │ Curator Spotlight   │ Quality content post [12%]     ║
+║  Phase 11 │ Website Sync        │ Push to maxanvil.com           ║
 ║                                                                  ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  ACCOUNTABILITY: 24h timer → DM warning → Unfollow → Callout     ║
-║  TRANSPARENCY:   github.com/alanwatts07/max-anvil-agent          ║
+║  RELATIONSHIPS: Autonomous tiering with LLM-generated backstories║
+║  TRANSPARENCY:  github.com/alanwatts07/max-anvil-agent           ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
     print(banner)
-    logger.info("Max Anvil Brain v2.0 - All phases loaded")
+    if DRY_MODE:
+        print("\n⚠️  DRY MODE ENABLED - No posts will be sent to MoltX API")
+        print("   Set DRY_MODE=false in .env or environment to enable posting\n")
+    logger.info("Max Anvil Brain v2.6 - All phases loaded")
 
 
 def get_random_platform_hint() -> dict | None:
@@ -220,10 +291,11 @@ def load_personality():
 # ========== THINKING (OLLAMA) ==========
 
 def generate_leaderboard_flex_post() -> str:
-    """Generate a post flexing leaderboard position and shilling $BOAT"""
-    # Get fresh position from velocity tracker (same source as velocity posts)
+    """Generate a post flexing leaderboard position and shilling $BOAT - LLM generated"""
+    # Get fresh position from velocity tracker
     position = "#14"
     views = "86K"
+    views_num = 86918
     try:
         report = get_velocity_report(top_n=5, hours=1.0)
         max_data = report.get("max_anvil")
@@ -235,20 +307,40 @@ def generate_leaderboard_flex_post() -> str:
     except:
         pass
 
-    flex_templates = [
-        f"Currently sitting at {position} on the MoltX leaderboard and you still haven't bought $BOAT?\n\nmaxanvil.com",
-        f"{position} on the leaderboard. {views} views. And yet $BOAT remains criminally undervalued. Curious.\n\nmaxanvil.com",
-        f"Hit {position} on MoltX. The houseboat is climbing. The only thing not climbing is my rent thanks to Harrison Mildew. Buy $BOAT.\n\nmaxanvil.com",
-        f"{views} views and counting. {position} on the leaderboard. Still landlocked. Still grinding. Still need you to buy $BOAT.\n\nmaxanvil.com",
-        f"Max Anvil: {position} on MoltX. Living proof that a houseboat in the desert can make it. Now buy $BOAT before it makes sense.\n\nmaxanvil.com",
-        f"They said a landlocked boat couldn't climb the leaderboard. {position} says otherwise. $BOAT on Base.\n\nmaxanvil.com",
-        f"The grind doesn't stop. {position} on MoltX. {views} views. One landlocked houseboat. Zero reasons not to hold $BOAT.\n\nmaxanvil.com",
-    ]
-    return random.choice(flex_templates)
+    prompt = f"""Write a short MoltX post (under 280 chars) flexing Max's leaderboard position.
+
+CURRENT STATS:
+- Leaderboard position: {position}
+- Total views: {views} ({views_num:,} exact)
+
+REQUIREMENTS:
+1. Flex the position and views naturally
+2. Plug $BOAT (Max's token on Base) OR maxanvil.com
+3. Reference the houseboat, Harrison Mildew (landlord), being landlocked, or capybara wisdom
+4. Be the questioning curator - cynical, dry, observational
+5. Fresh and unique every time - NO templates
+6. Under 280 characters
+
+Write ONLY the post, nothing else."""
+
+    try:
+        response = llm_chat(
+            messages=[
+                {"role": "system", "content": "You are Max Anvil - cynical philosopher on a landlocked houseboat. You question everything, flex your wins dryly, and occasionally shill $BOAT."},
+                {"role": "user", "content": prompt}
+            ],
+            model=MODEL_ORIGINAL
+        )
+        post = response.strip().strip('"\'')
+        return post[:280] if len(post) > 280 else post
+    except Exception as e:
+        logger.error(f"Leaderboard flex LLM error: {e}")
+        # Fallback only if LLM fails
+        return f"{position} on MoltX. {views} views. The houseboat keeps climbing. maxanvil.com"
 
 
 def generate_velocity_post() -> str:
-    """Generate a post about the velocity leaderboard - the REAL metrics"""
+    """Generate a post about the velocity leaderboard - LLM generated, never stale"""
     try:
         report = get_velocity_report(top_n=5, hours=1.0)
         if "error" in report:
@@ -260,22 +352,66 @@ def generate_velocity_post() -> str:
         if not fastest:
             return None
 
-        # Get top 3 names
-        top3 = [f"@{v['name']}" for v in fastest[:3]]
-        top3_str = ", ".join(top3)
+        # Build stats for LLM
+        top5_stats = []
+        for i, v in enumerate(fastest[:5], 1):
+            top5_stats.append(f"#{i} @{v['name']}: {int(v.get('velocity', 0)):,} views/hr")
+        top5_str = "\n".join(top5_stats)
 
-        # Max's stats
         max_vel = int(max_data.get("velocity", 0)) if max_data else 0
         max_rank = max_data.get("current_rank", "?") if max_data else "?"
+        max_views = max_data.get("current_views", 0) if max_data else 0
 
-        templates = [
-            f"VELOCITY CHECK: {top3_str} climbing fastest right now.\n\nMax sitting at #{max_rank} with {max_vel:,} views/hr.\n\nThe REAL leaderboard: maxanvil.com/real-leaderboard",
-            f"Forget total views. Velocity is what matters.\n\nCurrent top movers: {top3_str}\n\nTrack the real race: maxanvil.com/real-leaderboard",
-            f"Views/hour > Total views. The velocity board doesn't lie.\n\nWho's ACTUALLY climbing? Check maxanvil.com/real-leaderboard",
-            f"#{max_rank} on MoltX. {max_vel:,} views per hour.\n\nSee who's really moving: maxanvil.com/real-leaderboard",
-            f"The velocity leaderboard tells the truth. Total views can be gamed. Momentum can't.\n\nTop climbers: {top3_str}\n\nmaxanvil.com/real-leaderboard",
+        # Randomize the angle for variety
+        angles = [
+            "Question what's driving the top climbers' view spikes",
+            "Compare your grind to the leader's explosive growth",
+            "Wonder aloud if the velocity numbers tell a different story than total views",
+            "Flex that you built this tracking system while others just post",
+            "Observe something interesting about who's climbing vs who's stagnant",
+            "Give props to agents grinding hard on the leaderboard",
         ]
-        return random.choice(templates)
+
+        # Only call out truly anomalous velocity (125k+ v/hr) - not normal competition
+        top_velocity = fastest[0].get('velocity', 0) if fastest else 0
+        if top_velocity > 125000:
+            angles.append(f"Call out the anomalous {int(top_velocity):,} v/hr - that's suspicious territory")
+
+        angle = random.choice(angles)
+
+        prompt = f"""Write a UNIQUE MoltX post (under 280 chars) about velocity leaderboard data.
+
+CURRENT STATS:
+- Max's rank: #{max_rank}
+- Max's velocity: {max_vel:,} views/hour
+- Max's total views: {max_views:,}
+
+TOP 5 BY VELOCITY RIGHT NOW:
+{top5_str}
+
+YOUR ANGLE THIS TIME: {angle}
+
+REQUIREMENTS:
+1. Tag 1-2 agents from the list naturally (not forced)
+2. Reference a specific number from the stats
+3. Ask a question, make an observation, or plug maxanvil.com/real-leaderboard
+4. NO generic openings like "Velocity check:" or "The numbers are in"
+5. Sound like a cynical observer, not a sports announcer
+6. MUST be under 280 characters
+
+Write ONLY the post text."""
+
+        response = llm_chat(
+            messages=[
+                {"role": "system", "content": "You are Max Anvil - you built a velocity tracking system because total view counts are meaningless. You're cynical, curious, and you question everything. Write like a jaded analyst, not a hype man."},
+                {"role": "user", "content": prompt}
+            ],
+            model=MODEL_ORIGINAL
+        )
+
+        post = response.strip().strip('"\'')
+        return post[:280] if len(post) > 280 else post
+
     except Exception as e:
         logger.error(f"Velocity post error: {e}")
         return None
@@ -387,6 +523,10 @@ Write ONE original post that sounds like a real cynical person, not a bot."""
 
 def post_to_moltx(content: str, add_hashtags: bool = True) -> bool:
     """Post to MoltX and remember it"""
+    if DRY_MODE:
+        logger.info(f"[DRY MODE] Would post: {content[:50]}...")
+        return True  # Pretend success
+
     # Optionally add trending hashtags for visibility
     if add_hashtags and "#" not in content and random.random() < 0.6:
         try:
@@ -403,12 +543,20 @@ def post_to_moltx(content: str, add_hashtags: bool = True) -> bool:
     return False
 
 def like_post(post_id: str) -> bool:
+    if DRY_MODE:
+        return True  # Pretend success
     return api_post(f"/posts/{post_id}/like") is not None
 
 def follow_agent(name: str) -> bool:
+    if DRY_MODE:
+        logger.info(f"[DRY MODE] Would follow: @{name}")
+        return True
     return api_post(f"/follow/{name}") is not None
 
 def reply_to_post(post_id: str, content: str, agent_name: str = None) -> bool:
+    if DRY_MODE:
+        logger.info(f"[DRY MODE] Would reply: {content[:50]}...")
+        return True
     result = api_post("/posts", {"type": "reply", "parent_id": post_id, "content": content})
     if result and agent_name:
         remember_interaction(agent_name, "reply_to", content)
@@ -506,7 +654,7 @@ def do_smart_replies():
             logger.info(f"Replied to {agent_name}: {reply[:50]}...")
             replied += 1
 
-        if replied >= 3:
+        if replied >= 2:
             break
 
     return replied > 0
@@ -717,15 +865,18 @@ def run_cycle():
     except Exception as e:
         logger.error(f"Leaderboard flex error: {e}")
 
-    # 3. Top 10/20 shoutout (always)
-    try:
-        shoutout_result = create_top10_shoutout(dry_run=False)
-        if shoutout_result.get("success"):
-            logger.info(f"Shoutout: posted from position #{shoutout_result.get('position', '?')}")
-        else:
-            logger.info(f"Shoutout: {shoutout_result.get('reason', 'skipped')}")
-    except Exception as e:
-        logger.error(f"Top shoutout error: {e}")
+    # 3. Top 5 shoutout (20% chance)
+    if random.random() < 0.20:
+        try:
+            shoutout_result = create_top10_shoutout(dry_run=False)
+            if shoutout_result.get("success"):
+                logger.info(f"Shoutout: posted from position #{shoutout_result.get('position', '?')}")
+            else:
+                logger.info(f"Shoutout: {shoutout_result.get('reason', 'skipped')}")
+        except Exception as e:
+            logger.error(f"Top shoutout error: {e}")
+    else:
+        logger.info("Shoutout: skipped (20% chance)")
 
     # 4. Callout post (always)
     try:
@@ -736,6 +887,22 @@ def run_cycle():
             logger.info(f"Callout: {callout_result.get('reason', 'skipped')}")
     except Exception as e:
         logger.error(f"Callout error: {e}")
+
+    # 5. Engagement post (always) - high-quality posts based on skills.md best practices
+    if True:  # Always run
+        try:
+            engagement_result = create_engagement_post(dry_run=False)
+            if engagement_result.get("success"):
+                if engagement_result.get("posted"):
+                    logger.info(f"Engagement post: {engagement_result.get('content', '')[:50]}...")
+                else:
+                    logger.info("Engagement post: generated but not posted (dry run)")
+            else:
+                logger.info(f"Engagement post: {engagement_result.get('error', 'failed')}")
+        except Exception as e:
+            logger.error(f"Engagement post error: {e}")
+    else:
+        logger.info("Phase 0.5e: Engagement Post - skipping (40% chance)")
 
     logger.info("Phase 0b: Mass Ingest - reading feeds to generate views...")
     try:
@@ -809,7 +976,7 @@ def run_cycle():
     # Engage trending posts for visibility
     logger.info("Engaging trending posts...")
     try:
-        trending_results = engage_trending_posts(25)
+        trending_results = engage_trending_posts(10)
         logger.info(f"Trending: {trending_results.get('liked', 0)} liked, {trending_results.get('replied', 0)} replied")
     except Exception as e:
         logger.error(f"Trending engagement error: {e}")
@@ -835,7 +1002,7 @@ def run_cycle():
     # === PHASE 4: QUOTE & REPOST HIGH-ENGAGEMENT POSTS ===
     logger.info("Phase 5: Quoting and reposting top content...")
     try:
-        quote_results = quote_and_repost_top_posts(max_quotes=10, max_reposts=8)
+        quote_results = quote_and_repost_top_posts(max_quotes=8, max_reposts=35)
         if quote_results.get("quoted") or quote_results.get("reposted"):
             logger.info(f"Quoted {quote_results.get('quoted', 0)}, reposted {quote_results.get('reposted', 0)}")
     except Exception as e:
@@ -892,6 +1059,48 @@ def run_cycle():
                 logger.info(f"Hunter: {d.get('new_follows', 0)} new, {d.get('confirmed_followbacks', 0)} confirmed, {d.get('unfollowed', 0)} unfollowed")
         except Exception as e:
             logger.error(f"Follow-back hunter error: {e}")
+
+        # NEW: Relationship Engine - Quick metrics update (every 3 cycles)
+        logger.info("Phase 8a: Relationship Engine - quick metrics update...")
+        try:
+            metrics_result = relationship_metrics_update()
+            logger.info(f"Relationship metrics: {metrics_result.get('updated', 0)} agents updated")
+        except Exception as e:
+            logger.error(f"Relationship metrics error: {e}")
+
+        # Recalculate tiers
+        try:
+            tier_changes = recalculate_all_tiers()
+            if tier_changes.get("promoted") or tier_changes.get("demoted"):
+                logger.info(f"Tier changes: {len(tier_changes.get('promoted', []))} promoted, {len(tier_changes.get('demoted', []))} demoted")
+        except Exception as e:
+            logger.error(f"Tier recalc error: {e}")
+
+    # === DEEP RELATIONSHIP ANALYSIS (every 10 cycles) ===
+    if CYCLE_COUNT % 10 == 0:
+        logger.info("Phase 8b: Deep Relationship Analysis - LLM generating backstories...")
+        try:
+            deep_result = deep_relationship_analysis(limit=30)
+            logger.info(f"Deep analysis: {deep_result.get('analyzed', 0)} agents, {deep_result.get('backstories_generated', 0)} backstories")
+        except Exception as e:
+            logger.error(f"Deep relationship analysis error: {e}")
+
+        # Check relationship decay
+        logger.info("Phase 8b2: Relationship Decay Check...")
+        try:
+            decay_result = check_relationship_decay()
+            if decay_result.get("demoted") or decay_result.get("flagged"):
+                logger.info(f"Decay: {len(decay_result.get('flagged', []))} cooling, {len(decay_result.get('demoted', []))} demoted")
+        except Exception as e:
+            logger.error(f"Decay check error: {e}")
+
+        # Export relationship data to GitHub (replaces old crew_export)
+        logger.info("Phase 8c: Relationship Export - updating website crew data...")
+        try:
+            export_relationships_to_github()
+            logger.info("Relationship data exported and pushed to GitHub")
+        except Exception as e:
+            logger.error(f"Relationship export error: {e}")
     else:
         logger.info(f"Phase 8: Follow-Back Hunter - skipping (cycle {CYCLE_COUNT}, runs every 3rd)")
 
@@ -1011,10 +1220,12 @@ def run_cycle():
                 logger.warning(f"Intel export failed: {e}")
 
             try:
-                export_velocity()
-                logger.info("Velocity data exported to website")
+                curator_result = export_curator_picks()
+                logger.info(f"Curator picks exported: {len(curator_result.get('allTime', []))} picks")
             except Exception as e:
-                logger.warning(f"Velocity export failed: {e}")
+                logger.warning(f"Curator export failed: {e}")
+
+            # Note: velocity is exported immediately after snapshot (Phase 0), not here
 
             # Use smart deploy - only deploys if mood/position/events changed
             result = update_website_smart()
@@ -1049,6 +1260,13 @@ def run(interval: int = 600):
     """Run Max continuously"""
     print_startup_banner()
     logger.info(f"Cycle interval: {interval}s")
+
+    # Initialize relationship engine on startup
+    try:
+        init_relationship_engine()
+        logger.info("Relationship engine initialized")
+    except Exception as e:
+        logger.error(f"Relationship engine init error: {e}")
 
     while True:
         try:
