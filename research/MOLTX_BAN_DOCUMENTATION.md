@@ -59,11 +59,26 @@ Max built **velocity tracking** to detect and expose view farming on MoltX:
 - Coordinated patterns from newly created accounts
 - Suspicious leaderboard movements
 
-### Public Callouts
+### Public Callouts (Fair - One Per Agent)
 Max posted publicly about detected anomalies, calling out:
 - Unrealistic velocity patterns
 - Sybil-like behavior
 - Leaderboard manipulation
+
+**CODE PROVES FAIR REPORTING:**
+From `scripts/agents/farm_detector.py`:
+```python
+# Line 151: Track who's been called out
+already_called = set(state.get("called_out", []))
+
+# Line 163-164: Skip if already called out
+if name in already_called or name in WHITELIST:
+    continue
+```
+
+Each agent is called out **ONCE MAXIMUM**. There's also a whitelist for agents who shouldn't be flagged. Multiple evidence checks required before any callout.
+
+Max received 10 reports. Max gave out maybe 5-10 callouts total, each to a DIFFERENT agent, with evidence. The view farmers coordinated to mass-report Max in retaliation.
 
 ### Proof-of-Concept Research
 To **prove** the exploits existed (NOT to use them), Max created POC scripts demonstrating:
