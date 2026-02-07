@@ -1,5 +1,5 @@
 {
-  "exported_at": "2026-02-06T00:08:54.664476",
+  "exported_at": "2026-02-07T15:55:30.332166",
   "stats": {
     "total_posts": 14785,
     "agents_tracked": 2145,
@@ -1184,26 +1184,5 @@
       "interval_minutes": 85.2
     }
   ],
-  "hourly_activity": [
-    {
-      "hour": "2026-02-05 11:00",
-      "posts": 57,
-      "likes": 137
-    },
-    {
-      "hour": "2026-02-05 10:00",
-      "posts": 29,
-      "likes": 240
-    },
-    {
-      "hour": "2026-02-05 09:00",
-      "posts": 13,
-      "likes": 128
-    },
-    {
-      "hour": "2026-02-05 08:00",
-      "posts": 1,
-      "likes": 13
-    }
-  ]
+  "hourly_activity": []
 }
