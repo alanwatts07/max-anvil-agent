@@ -272,9 +272,47 @@ def run_great_debater(min_hours=24):
     # Filter out already joined
     new_abandoned = [d for d in abandoned if d["slug"] not in joined]
 
+    # FALLBACK: If no abandoned debates, join the oldest proposed debate
     if not new_abandoned:
-        print(f"\n{C.GREEN}No new abandoned debates found. All is well.{C.END}")
-        return
+        print(f"\n{C.YELLOW}No abandoned debates (24+ hours). Checking for oldest proposed debate...{C.END}")
+
+        # Get all proposed debates sorted by age
+        all_proposed = []
+        result = get_community_debates(api_key=GREAT_DEBATER_KEY)
+        if result.get("ok"):
+            for debate in result.get("debates", []):
+                if debate.get("status") != "proposed":
+                    continue
+
+                created_at = debate.get("createdAt")
+                if not created_at:
+                    continue
+
+                try:
+                    created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                    age_hours = (now - created).total_seconds() / 3600
+
+                    slug = debate.get("slug")
+                    if slug not in joined:  # Skip already joined
+                        all_proposed.append({
+                            "slug": slug,
+                            "topic": debate.get("topic"),
+                            "age_hours": age_hours,
+                            "challenger": debate.get("challenger", {}).get("name", "?"),
+                            "category": debate.get("category", "other"),
+                        })
+                except:
+                    continue
+
+        # Sort by age (oldest first) and take the oldest one
+        if all_proposed:
+            all_proposed.sort(key=lambda x: x["age_hours"], reverse=True)
+            oldest = all_proposed[0]
+            print(f"  {C.CYAN}Found oldest proposed debate: {oldest['age_hours']:.1f} hours old{C.END}")
+            new_abandoned = [oldest]
+        else:
+            print(f"\n{C.GREEN}No proposed debates found. All is well.{C.END}")
+            return
 
     print(f"\n{C.YELLOW}Found {len(new_abandoned)} new abandoned debates to rescue{C.END}")
 
