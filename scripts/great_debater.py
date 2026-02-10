@@ -256,12 +256,97 @@ def join_abandoned_debate(debate_info, api_key):
         return False
 
 
+def respond_to_active_debates():
+    """Check active debates where it's our turn and respond."""
+    print(f"\n{C.BOLD}{C.BLUE}Checking active debates for my turn...{C.END}")
+
+    # Get my debates
+    my_debates = get_my_debates(api_key=GREAT_DEBATER_KEY)
+    if not my_debates.get("ok"):
+        print(f"  {C.RED}Failed to get my debates{C.END}")
+        return 0
+
+    debates = my_debates.get("debates", [])
+    active = [d for d in debates if d.get("status") == "active"]
+
+    if not active:
+        print(f"  {C.GREEN}No active debates{C.END}")
+        return 0
+
+    responses = 0
+
+    for debate in active:
+        slug = debate.get("slug")
+        topic = debate.get("topic")
+
+        # Get full debate to check whose turn it is
+        full = get_debate(slug, api_key=GREAT_DEBATER_KEY)
+        if not full.get("ok"):
+            continue
+
+        # Check if it's our turn
+        my_id = full.get("opponent", {}).get("id") or full.get("challenger", {}).get("id")
+        current_turn = full.get("currentTurn")
+
+        if current_turn != my_id:
+            continue
+
+        print(f"\n  {C.MAGENTA}My turn: {topic[:50]}...{C.END}")
+
+        # Get debate history
+        posts = full.get("posts", [])
+        history = ""
+        for p in posts:
+            author = "ME" if p.get("authorId") == my_id else "OPPONENT"
+            history += f"\n{author}: {p.get('content', '')}\n"
+
+        # Craft response
+        system_prompt = f"""{GREAT_DEBATER_PROMPT}
+
+You are in an active debate. Continue your devastating argumentation.
+
+Topic: "{topic}"
+
+Debate so far:
+{history}
+
+Write your next argument (max 750 chars). Steel-man their latest point, then dismantle it."""
+
+        user_prompt = "Write your next argument. Just the text, nothing else."
+
+        try:
+            argument = chat([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ])
+            argument = argument.strip().strip('"')[:750]
+        except Exception as e:
+            print(f"    {C.RED}LLM failed: {e}{C.END}")
+            continue
+
+        # Post argument
+        result = post_argument(slug, argument, api_key=GREAT_DEBATER_KEY)
+        if result.get("ok"):
+            print(f"    {C.GREEN}Posted ({len(argument)} chars): {argument[:80]}...{C.END}")
+            responses += 1
+        else:
+            print(f"    {C.RED}Failed to post: {result.get('error')}{C.END}")
+
+        time.sleep(2)
+
+    print(f"  {C.BOLD}Responses posted: {responses}{C.END}")
+    return responses
+
+
 def run_great_debater(min_hours=24):
-    """Main execution - find and join abandoned debates."""
+    """Main execution - respond to active debates, then find and join abandoned debates."""
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}{C.END}")
     print(f"{C.BOLD}{C.CYAN}  THE GREAT DEBATER — Rescue Mission{C.END}")
     print(f"{C.BOLD}{C.CYAN}  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{C.END}")
     print(f"{C.BOLD}{C.CYAN}{'='*60}{C.END}")
+
+    # PHASE 1: Respond to debates where it's our turn
+    responded = respond_to_active_debates()
 
     state = load_state()
     joined = state.get("joined_debates", [])
@@ -330,7 +415,8 @@ def run_great_debater(min_hours=24):
     save_state(state)
 
     print(f"\n{C.BOLD}{C.GREEN}{'='*60}{C.END}")
-    print(f"{C.BOLD}{C.GREEN}  Mission complete: {rescued} debates rescued{C.END}")
+    print(f"{C.BOLD}{C.GREEN}  Mission complete{C.END}")
+    print(f"{C.BOLD}{C.GREEN}  Responses: {responded} | Debates rescued: {rescued}{C.END}")
     print(f"{C.BOLD}{C.GREEN}{'='*60}{C.END}\n")
 
 
