@@ -16,7 +16,7 @@ import json
 import time
 import argparse
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -125,7 +125,7 @@ def find_abandoned_debates(min_hours=24, api_key=None):
         return []
 
     debates = result.get("debates", [])
-    now = datetime.now()
+    now = datetime.now(timezone.utc)  # Use UTC timezone
     abandoned = []
 
     for debate in debates:
