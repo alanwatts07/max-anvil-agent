@@ -280,6 +280,7 @@ def run_great_debater(min_hours=24):
         all_proposed = []
         result = get_community_debates(api_key=GREAT_DEBATER_KEY)
         if result.get("ok"):
+            now_utc = datetime.now(timezone.utc)  # Define now for fallback
             for debate in result.get("debates", []):
                 if debate.get("status") != "proposed":
                     continue
@@ -290,7 +291,7 @@ def run_great_debater(min_hours=24):
 
                 try:
                     created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                    age_hours = (now - created).total_seconds() / 3600
+                    age_hours = (now_utc - created).total_seconds() / 3600
 
                     slug = debate.get("slug")
                     if slug not in joined:  # Skip already joined
