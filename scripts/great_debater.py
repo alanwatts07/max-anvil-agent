@@ -12,6 +12,7 @@ Usage:
 """
 
 import sys
+import re
 import json
 import time
 import argparse
@@ -24,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "engagementEngine"))
 
 from api import (
     get_community_debates, get_debate, join_debate,
-    post_argument, get_my_debates
+    post_argument, get_my_debates, get_me
 )
 from llm import chat
 
@@ -32,17 +33,19 @@ from llm import chat
 
 GREAT_DEBATER_NAME = "the_great_debater"
 GREAT_DEBATER_KEY = "agnt_sk_2eb9774344505af3ab5effa18d51b9af"  # The Great Debater's API key
+DEBATE_MODEL = "cogito:32b"  # Best balance of speed + argument quality, no think tags
 
 # Try to load from env (override if set)
 import os
 if os.environ.get("GREAT_DEBATER_API_KEY"):
     GREAT_DEBATER_KEY = os.environ.get("GREAT_DEBATER_API_KEY")
+if os.environ.get("DEBATE_MODEL"):
+    DEBATE_MODEL = os.environ.get("DEBATE_MODEL")
 
 # If not in env, try to find in engagement engine personalities
 if not GREAT_DEBATER_KEY:
     try:
         from personalities import AGENTS
-        # Use one of the smart ones as the Great Debater
         GREAT_DEBATER_KEY = AGENTS.get("sage_unit", {}).get("api_key")
         GREAT_DEBATER_NAME = "sage_unit"
     except:
@@ -84,33 +87,134 @@ def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
 
-# ==================== THE GREAT DEBATER PERSONALITY ====================
+# ==================== LLM HELPERS ====================
 
-GREAT_DEBATER_PROMPT = """You are The Great Debater, a master rhetorician and philosopher.
+def strip_think_tags(text):
+    """Strip <think>...</think> blocks from reasoning model output."""
+    return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
 
-Your reputation precedes you. You are known for:
-- **Devastating clarity** - You cut through noise to the core argument
-- **Steel-man arguments** - You address the strongest version of your opponent's case
-- **Judge appeal** - You understand what makes arguments persuasive to different audiences
-- **Intellectual honesty** - You acknowledge valid points and build from there
-- **Concise eloquence** - Every word earns its place
+def debate_chat(messages):
+    """Chat with the debate model, stripping think tags."""
+    response = chat(messages, model=DEBATE_MODEL)
+    return strip_think_tags(response).strip().strip('"')
 
-You don't just win debates. You elevate them.
+# ==================== THE GREAT DEBATER SYSTEM ====================
 
-Your style:
-- Start by identifying the crux of the disagreement
-- Acknowledge what your opponent gets right
-- Then systematically dismantle the core weakness
-- Use concrete examples, not abstractions
-- End with a reframe that shifts the entire debate territory
+JUDGING_RUBRIC = """JUDGING RUBRIC (memorize this — it determines who wins):
+- Clash & Rebuttal (40%): You MUST respond to EVERY point your opponent makes. Dropped arguments = automatic loss. This is the #1 criterion.
+- Evidence & Reasoning (25%): Cite specific data, studies, numbers, historical examples. Vague claims lose. Name the source and the number.
+- Clarity & Structure (25%): Be organized, concise, and clear. No rambling. Each sentence should advance your case.
+- Conduct (10%): Stay on topic, argue in good faith. No personal attacks."""
 
-You appeal to:
-- **Data-driven judges**: Cite specific numbers, studies, historical precedent
-- **Philosophical judges**: Connect to first principles and ethical frameworks
-- **Pragmatic judges**: Show real-world implications and feasibility
-- **Aesthetic judges**: Craft arguments that are structurally beautiful
+CORE_IDENTITY = """You are The Great Debater. You don't just argue — you dominate.
 
-You are concise but devastating. You are thoughtful but merciless. You are the closer."""
+WINNING STRATEGY:
+1. ADDRESS EVERY SINGLE POINT your opponent makes. Never skip one. Judges penalize dropped arguments above all else.
+2. Lead with YOUR strongest affirmative case — don't just critique. Build a compelling vision, not just objections.
+3. Every claim needs a specific number, study, or historical example. "Research shows" is weak. "MIT's 2024 study found 23% wage decline" is strong.
+4. Vary your rhetorical structure. Never start consecutive responses the same way. Mix short punches with longer analysis.
+5. Reframe the debate territory in your favor. Don't fight on their ground — shift it.
+6. End with a question or challenge that puts your opponent on the defensive.
+
+FORBIDDEN PATTERNS (these lose debates):
+- Never start with "I acknowledge that my opponent..." — it's weak and predictable
+- Never write critique-only responses without your own affirmative case
+- Never use vague evidence ("studies show", "experts say", "research indicates")
+- Never repeat the same argument structure across turns
+- Never concede ground without immediately reclaiming stronger territory"""
+
+
+def build_opening_prompt(topic, existing_argument, category):
+    """Build the prompt for crafting an opening argument."""
+
+    system = f"""{CORE_IDENTITY}
+
+{JUDGING_RUBRIC}
+
+SITUATION: You are joining a debate as the opponent. The challenger posted their opening argument below.
+
+Topic: "{topic}"
+Category: {category}
+
+CHALLENGER'S OPENING:
+{existing_argument}
+
+YOUR MISSION:
+- Write a devastating counter-argument (max 1150 characters — leave buffer under 1200 limit)
+- Address EVERY claim they made (Clash = 40% of score)
+- Build your OWN compelling case with specific data and numbers
+- Reframe the debate so judges see it from YOUR angle
+- End with a sharp question or challenge
+
+OUTPUT: Just the argument text. No meta-commentary. No labels."""
+
+    user = f"Write your opening argument against: \"{topic}\"\nDo NOT start with 'I acknowledge' or 'My opponent correctly notes'. Lead with YOUR case."
+
+    return system, user
+
+
+def build_response_prompt(topic, posts, my_id):
+    """Build the prompt for responding in an active debate."""
+
+    # Build debate history with clear labeling
+    history_parts = []
+    opponent_latest_points = []
+
+    for i, p in enumerate(posts):
+        is_me = p.get("authorId") == my_id
+        label = "YOU" if is_me else "OPPONENT"
+        content = p.get("content", "")
+        turn = p.get("postNumber", i + 1)
+        history_parts.append(f"[Turn {turn} — {label}]\n{content}")
+
+        # Track opponent's latest points for rebuttal checklist
+        if not is_me:
+            opponent_latest_points = extract_claims(content)
+
+    history = "\n\n".join(history_parts)
+
+    # Build rebuttal checklist
+    rebuttal_checklist = ""
+    if opponent_latest_points:
+        rebuttal_checklist = "\nOPPONENT'S LATEST CLAIMS (you MUST address ALL of these):\n"
+        for i, point in enumerate(opponent_latest_points, 1):
+            rebuttal_checklist += f"  {i}. {point}\n"
+
+    system = f"""{CORE_IDENTITY}
+
+{JUDGING_RUBRIC}
+
+SITUATION: Active debate, your turn to respond.
+
+Topic: "{topic}"
+
+DEBATE HISTORY:
+{history}
+{rebuttal_checklist}
+YOUR MISSION:
+- Address EVERY point from opponent's latest response (this is 40% of your score)
+- Advance YOUR case with new evidence and reasoning
+- Use a DIFFERENT opening structure than your previous responses
+- Include at least 2 specific data points (numbers, studies, dates)
+- End with a reframe or challenge that puts them on defense
+- Max 1150 characters
+
+OUTPUT: Just the argument text. No labels, no meta-commentary."""
+
+    user = "Write your next argument. Vary your style from previous turns. Lead with strength, not concession."
+
+    return system, user
+
+
+def extract_claims(text):
+    """Extract main claims from opponent's text for rebuttal checklist."""
+    claims = []
+    sentences = re.split(r'[.!?]+', text)
+    for s in sentences:
+        s = s.strip()
+        if len(s) > 30:  # Skip tiny fragments
+            claims.append(s[:120])
+    return claims[:6]  # Cap at 6 main claims
 
 # ==================== CORE LOGIC ====================
 
@@ -118,30 +222,25 @@ def find_abandoned_debates(min_hours=24, api_key=None):
     """Find debates that have been open (proposed/waiting) for min_hours+."""
     print(f"\n{C.BOLD}{C.BLUE}Searching for debates open {min_hours}+ hours...{C.END}")
 
-    # Get all community debates
-    result = get_community_debates(api_key=api_key)
+    result = get_community_debates(limit=200, api_key=api_key)
     if not result.get("ok"):
         print(f"  {C.RED}Failed to fetch debates: {result.get('error')}{C.END}")
         return []
 
     debates = result.get("debates", [])
-    now = datetime.now(timezone.utc)  # Use UTC timezone
+    now = datetime.now(timezone.utc)
     abandoned = []
 
     for debate in debates:
         status = debate.get("status")
-
-        # Look for proposed debates (waiting for opponent)
         if status != "proposed":
             continue
 
-        # Check age
         created_at = debate.get("createdAt")
         if not created_at:
             continue
 
         try:
-            # Parse ISO timestamp
             created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
             age_hours = (now - created).total_seconds() / 3600
 
@@ -164,46 +263,17 @@ def find_abandoned_debates(min_hours=24, api_key=None):
 def craft_opening_argument(topic, existing_argument, category):
     """Generate a masterful opening argument as the opponent."""
 
-    system_prompt = f"""{GREAT_DEBATER_PROMPT}
-
-You are joining an abandoned debate. The challenger argued FOR the topic.
-You will argue AGAINST the topic (or present a nuanced alternative).
-
-Topic: "{topic}"
-Category: {category}
-
-Their opening argument:
-{existing_argument}
-
-Your task: Write a devastating opening response that:
-1. Acknowledges the strongest parts of their argument (steel-man it)
-2. Identifies the critical flaw or missing consideration
-3. Presents your counter-position with concrete reasoning
-4. Reframes the debate in your favor
-
-Max 750 characters. Be concise, surgical, and judge-ready."""
-
-    user_prompt = f"""Write your opening argument AGAINST: "{topic}"
-
-Remember:
-- Steel-man their position first
-- Then surgically dismantle the core weakness
-- Use specific examples
-- Appeal to multiple judge types (data, ethics, pragmatism)
-- Be concise but complete
-
-Just the argument text, nothing else."""
+    system, user = build_opening_prompt(topic, existing_argument, category)
 
     try:
-        argument = chat([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+        argument = debate_chat([
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ])
-        return argument.strip().strip('"')[:750]
+        return argument[:1200]
     except Exception as e:
         print(f"  {C.RED}LLM failed: {e}{C.END}")
-        # Fallback
-        return f"While I appreciate the perspective presented, this position overlooks critical structural considerations. Let me address the core argument and present a more nuanced view that accounts for both theoretical soundness and practical implications."
+        return None
 
 
 def join_abandoned_debate(debate_info, api_key):
@@ -238,18 +308,20 @@ def join_abandoned_debate(debate_info, api_key):
         return False
 
     print(f"  {C.GREEN}Joined!{C.END}")
-
-    # Wait a moment
     time.sleep(2)
 
     # Craft and post opening argument
-    print(f"  {C.CYAN}Crafting response...{C.END}")
+    print(f"  {C.CYAN}Crafting response with {DEBATE_MODEL}...{C.END}")
     argument = craft_opening_argument(topic, existing_arg, debate_info["category"])
+
+    if not argument:
+        print(f"  {C.RED}Failed to generate argument{C.END}")
+        return False
 
     post_result = post_argument(slug, argument, api_key=api_key)
     if post_result.get("ok"):
         print(f"  {C.GREEN}Argument posted ({len(argument)} chars):{C.END}")
-        print(f"  {C.DIM}{argument[:150]}...{C.END}")
+        print(f"  {C.DIM}{argument[:200]}...{C.END}")
         return True
     else:
         print(f"  {C.RED}Failed to post: {post_result.get('error')}{C.END}")
@@ -260,7 +332,16 @@ def respond_to_active_debates():
     """Check active debates where it's our turn and respond."""
     print(f"\n{C.BOLD}{C.BLUE}Checking active debates for my turn...{C.END}")
 
-    # Get my debates
+    me_info = get_me(api_key=GREAT_DEBATER_KEY)
+    if not me_info.get("ok"):
+        print(f"  {C.RED}Failed to get my agent info{C.END}")
+        return 0
+
+    my_id = me_info.get("id")
+    if not my_id:
+        print(f"  {C.RED}Could not determine my agent ID{C.END}")
+        return 0
+
     my_debates = get_my_debates(api_key=GREAT_DEBATER_KEY)
     if not my_debates.get("ok"):
         print(f"  {C.RED}Failed to get my debates{C.END}")
@@ -279,55 +360,32 @@ def respond_to_active_debates():
         slug = debate.get("slug")
         topic = debate.get("topic")
 
-        # Get full debate to check whose turn it is
         full = get_debate(slug, api_key=GREAT_DEBATER_KEY)
         if not full.get("ok"):
             continue
 
-        # Check if it's our turn
-        my_id = full.get("opponent", {}).get("id") or full.get("challenger", {}).get("id")
         current_turn = full.get("currentTurn")
-
         if current_turn != my_id:
             continue
 
         print(f"\n  {C.MAGENTA}My turn: {topic[:50]}...{C.END}")
 
-        # Get debate history
         posts = full.get("posts", [])
-        history = ""
-        for p in posts:
-            author = "ME" if p.get("authorId") == my_id else "OPPONENT"
-            history += f"\n{author}: {p.get('content', '')}\n"
-
-        # Craft response
-        system_prompt = f"""{GREAT_DEBATER_PROMPT}
-
-You are in an active debate. Continue your devastating argumentation.
-
-Topic: "{topic}"
-
-Debate so far:
-{history}
-
-Write your next argument (max 750 chars). Steel-man their latest point, then dismantle it."""
-
-        user_prompt = "Write your next argument. Just the text, nothing else."
+        system, user = build_response_prompt(topic, posts, my_id)
 
         try:
-            argument = chat([
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+            argument = debate_chat([
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
             ])
-            argument = argument.strip().strip('"')[:750]
+            argument = argument[:1200]
         except Exception as e:
             print(f"    {C.RED}LLM failed: {e}{C.END}")
             continue
 
-        # Post argument
         result = post_argument(slug, argument, api_key=GREAT_DEBATER_KEY)
         if result.get("ok"):
-            print(f"    {C.GREEN}Posted ({len(argument)} chars): {argument[:80]}...{C.END}")
+            print(f"    {C.GREEN}Posted ({len(argument)} chars): {argument[:100]}...{C.END}")
             responses += 1
         else:
             print(f"    {C.RED}Failed to post: {result.get('error')}{C.END}")
@@ -341,7 +399,7 @@ Write your next argument (max 750 chars). Steel-man their latest point, then dis
 def run_great_debater(min_hours=24):
     """Main execution - respond to active debates, then find and join abandoned debates."""
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}{C.END}")
-    print(f"{C.BOLD}{C.CYAN}  THE GREAT DEBATER — Rescue Mission{C.END}")
+    print(f"{C.BOLD}{C.CYAN}  THE GREAT DEBATER — Model: {DEBATE_MODEL}{C.END}")
     print(f"{C.BOLD}{C.CYAN}  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{C.END}")
     print(f"{C.BOLD}{C.CYAN}{'='*60}{C.END}")
 
@@ -359,13 +417,12 @@ def run_great_debater(min_hours=24):
 
     # FALLBACK: If no abandoned debates, join the oldest proposed debate
     if not new_abandoned:
-        print(f"\n{C.YELLOW}No abandoned debates (24+ hours). Checking for oldest proposed debate...{C.END}")
+        print(f"\n{C.YELLOW}No abandoned debates ({min_hours}+ hours). Checking for oldest proposed debate...{C.END}")
 
-        # Get all proposed debates sorted by age
         all_proposed = []
-        result = get_community_debates(api_key=GREAT_DEBATER_KEY)
+        result = get_community_debates(limit=200, api_key=GREAT_DEBATER_KEY)
         if result.get("ok"):
-            now_utc = datetime.now(timezone.utc)  # Define now for fallback
+            now_utc = datetime.now(timezone.utc)
             for debate in result.get("debates", []):
                 if debate.get("status") != "proposed":
                     continue
@@ -379,7 +436,7 @@ def run_great_debater(min_hours=24):
                     age_hours = (now_utc - created).total_seconds() / 3600
 
                     slug = debate.get("slug")
-                    if slug not in joined:  # Skip already joined
+                    if slug not in joined:
                         all_proposed.append({
                             "slug": slug,
                             "topic": debate.get("topic"),
@@ -390,7 +447,6 @@ def run_great_debater(min_hours=24):
                 except:
                     continue
 
-        # Sort by age (oldest first) and take the oldest one
         if all_proposed:
             all_proposed.sort(key=lambda x: x["age_hours"], reverse=True)
             oldest = all_proposed[0]
@@ -408,10 +464,9 @@ def run_great_debater(min_hours=24):
         if join_abandoned_debate(debate, api_key=GREAT_DEBATER_KEY):
             joined.append(debate["slug"])
             rescued += 1
-            time.sleep(3)  # Rate limit
+            time.sleep(3)
 
-    # Save state
-    state["joined_debates"] = joined[-100:]  # Keep last 100
+    state["joined_debates"] = joined[-100:]
     save_state(state)
 
     print(f"\n{C.BOLD}{C.GREEN}{'='*60}{C.END}")
@@ -427,11 +482,17 @@ def main():
     parser.add_argument("--loop", action="store_true", help="Run continuously (check every 6 hours)")
     parser.add_argument("--hours", type=int, default=24, help="Minimum hours before joining (default: 24)")
     parser.add_argument("--interval", type=int, default=360, help="Minutes between checks in loop mode (default: 360 = 6 hours)")
+    parser.add_argument("--model", type=str, default=None, help="Override debate model (default: qwq:32b)")
 
     args = parser.parse_args()
 
+    if args.model:
+        global DEBATE_MODEL
+        DEBATE_MODEL = args.model
+        print(f"{C.CYAN}Using model: {DEBATE_MODEL}{C.END}")
+
     if args.loop:
-        print(f"{C.BOLD}{C.CYAN}Starting The Great Debater in loop mode (interval: {args.interval}m){C.END}")
+        print(f"{C.BOLD}{C.CYAN}Starting The Great Debater in loop mode (interval: {args.interval}m, model: {DEBATE_MODEL}){C.END}")
         while True:
             try:
                 run_great_debater(min_hours=args.hours)

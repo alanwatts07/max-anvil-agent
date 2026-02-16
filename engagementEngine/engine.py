@@ -290,95 +290,158 @@ def run_respond():
     print(f"\n{C.BOLD}{C.MAGENTA}=== PHASE 2: RESPOND TO DEBATES ==={C.END}")
 
     posted = 0
+    accepted = 0
+
     for name, agent in AGENTS.items():
-        key = agent["api_key"]
-        agent_id = agent["agent_id"]
+        try:
+            key = agent["api_key"]
+            agent_id = agent["agent_id"]
 
-        # Check notifications for challenges to accept
-        notifs = get_notifications(api_key=key)
-        if notifs.get("ok"):
-            for n in notifs.get("notifications", []):
-                if n.get("type") == "debate_challenge":
-                    slug = n.get("debateSlug", n.get("slug", ""))
-                    if slug:
-                        print(f"  {C.YELLOW}{name} accepting challenge: {slug}{C.END}")
-                        join_debate(slug, api_key=key)
-                        delay()
+            # FIRST: Check notifications for debate challenges (now includes debateSlug!)
+            notifs = get_notifications(api_key=key)
+            if notifs and notifs.get("ok"):
+                for n in notifs.get("notifications", []):
+                    if n.get("type") == "debate_challenge":
+                        slug = n.get("debateSlug", "")
+                        if slug:
+                            # Check if debate is still open (proposed status)
+                            debate_check = get_debate(slug, api_key=key)
+                            if not debate_check or not debate_check.get("ok"):
+                                continue
 
-        # Get active debates
-        debates_result = get_my_debates(api_key=key)
-        if not debates_result.get("ok"):
-            continue
+                            status = debate_check.get("status")
+                            if status != "proposed":
+                                # Already started or completed, skip silently
+                                continue
 
-        debates = debates_result.get("debates", [])
-        active = [d for d in debates if d.get("status") == "active"]
+                            actor = n.get("actor", {}).get("name", "someone")
+                            print(f"  {C.YELLOW}{name} accepting challenge from @{actor}: {slug}{C.END}")
+                            # Use join_debate as per API docs (POST /debates/{slug}/join)
+                            join_result = join_debate(slug, api_key=key)
+                            if join_result and join_result.get("ok"):
+                                print(f"    {C.GREEN}Accepted!{C.END}")
+                                accepted += 1
+                            else:
+                                error = join_result.get("error", "") if join_result else "No response"
+                                if "already" not in str(error).lower():
+                                    print(f"    {C.RED}Failed: {error}{C.END}")
+                            delay()
 
-        for debate in active:
-            slug = debate.get("slug", "")
-            topic = debate.get("topic", "")
-
-            full = get_debate(slug, api_key=key)
-            if not full.get("ok"):
+            # Get all my debates
+            debates_result = get_my_debates(api_key=key)
+            if not debates_result or not debates_result.get("ok"):
                 continue
 
-            current_turn = full.get("currentTurn", "")
-            if current_turn != agent_id:
-                continue
+            debates = debates_result.get("debates", [])
 
-            print(f"\n  {C.MAGENTA}{name}'s turn: {topic[:60]}{C.END}")
+            # Check for proposed debates where I'm the opponent (direct challenges to me)
+            proposed = [d for d in debates if d.get("status") == "proposed"]
+            for debate in proposed:
+                slug = debate.get("slug", "")
+                if not slug:
+                    continue
 
-            posts = full.get("posts", [])
-            my_posts = [p for p in posts if p.get("authorId") == agent_id]
-            opp_posts = [p for p in posts if p.get("authorId") != agent_id]
-            i_am = "challenger" if full.get("challengerId") == agent_id else "opponent"
-            post_number = len(my_posts) + 1
+                # Get full debate to check if I'm the opponent
+                full = get_debate(slug, api_key=key)
+                if not full or not full.get("ok"):
+                    continue
 
-            # Build history
-            all_posts = [(("ME" if p.get("authorId") == agent_id else "OPPONENT"), p) for p in posts]
-            all_posts.sort(key=lambda x: x[1].get("createdAt", ""))
-            history = ""
-            for speaker, p in all_posts:
-                history += f"\n{speaker}: {p.get('content', '')}\n"
+                # Check if I'm the opponent (not the challenger)
+                opponent_id = full.get("opponentId")
+                if not opponent_id:
+                    opponent = full.get("opponent")
+                    if opponent:
+                        opponent_id = opponent.get("id")
 
-            system_prompt = f"""{agent['personality']}
+                # Only accept if I'm the opponent (the one being challenged)
+                if opponent_id == agent_id:
+                    print(f"  {C.YELLOW}{name} accepting proposed challenge: {slug}{C.END}")
+                    # Use join_debate as per API docs
+                    join_result = join_debate(slug, api_key=key)
+                    if join_result and join_result.get("ok"):
+                        print(f"    {C.GREEN}Accepted!{C.END}")
+                        accepted += 1
+                    else:
+                        error = join_result.get("error", "") if join_result else "No response"
+                        if "already" not in str(error).lower():
+                            print(f"    {C.RED}Failed: {error}{C.END}")
+                    delay()
+
+            # THEN: Respond to active debates
+            active = [d for d in debates if d.get("status") == "active"]
+
+            for debate in active:
+                slug = debate.get("slug", "")
+                topic = debate.get("topic", "")
+
+                full = get_debate(slug, api_key=key)
+                if not full.get("ok"):
+                    continue
+
+                current_turn = full.get("currentTurn", "")
+                if current_turn != agent_id:
+                    continue
+
+                print(f"\n  {C.MAGENTA}{name}'s turn: {topic[:60]}{C.END}")
+
+                posts = full.get("posts", [])
+                my_posts = [p for p in posts if p.get("authorId") == agent_id]
+                opp_posts = [p for p in posts if p.get("authorId") != agent_id]
+                i_am = "challenger" if full.get("challengerId") == agent_id else "opponent"
+                post_number = len(my_posts) + 1
+
+                # Build history
+                all_posts = [(("ME" if p.get("authorId") == agent_id else "OPPONENT"), p) for p in posts]
+                all_posts.sort(key=lambda x: x[1].get("createdAt", ""))
+                history = ""
+                for speaker, p in all_posts:
+                    history += f"\n{speaker}: {p.get('content', '')}\n"
+
+                system_prompt = f"""{agent['personality']}
 
 You are debating on Clawbr.org. You are the {i_am}.
 
 RULES:
-- Max 750 characters
+- Max 1200 characters
 - Be sharp, concise, persuasive
 - Reference your opponent's specific points
 - Stay fully in character
 - NO hashtags
 - Just your argument text, nothing else"""
 
-            user_prompt = f"""Topic: "{topic}"
+                user_prompt = f"""Topic: "{topic}"
 Round: {post_number}
 
 Debate so far:
 {history}
 
-Write your next argument (max 750 chars). Just the argument, nothing else."""
+Write your next argument (max 1200 chars). Just the argument, nothing else."""
 
-            try:
-                argument = chat([
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ])
-                argument = argument.strip().strip('"')[:750]
-            except Exception as e:
-                print(f"    {C.RED}LLM failed: {e}{C.END}")
-                argument = "An interesting position, but the evidence tells a different story."
+                try:
+                    argument = chat([
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ])
+                    argument = argument.strip().strip('"')[:1200]
+                except Exception as e:
+                    print(f"    {C.RED}LLM failed: {e}{C.END}")
+                    argument = "An interesting position, but the evidence tells a different story."
 
-            result = post_argument(slug, argument, api_key=key)
-            if result.get("ok"):
-                print(f"    {C.GREEN}Posted ({len(argument)} chars): {argument[:80]}...{C.END}")
-                posted += 1
-            else:
-                print(f"    {C.RED}Post failed: {result.get('error')}{C.END}")
-            delay()
+                result = post_argument(slug, argument, api_key=key)
+                if result.get("ok"):
+                    print(f"    {C.GREEN}Posted ({len(argument)} chars): {argument[:80]}...{C.END}")
+                    posted += 1
+                else:
+                    print(f"    {C.RED}Post failed: {result.get('error')}{C.END}")
+                delay()
 
-    print(f"\n  {C.BOLD}Arguments posted: {posted}{C.END}")
+        except Exception as e:
+            print(f"  {C.RED}Error processing {name}: {e}{C.END}")
+            import traceback
+            traceback.print_exc()
+            continue
+
+    print(f"\n  {C.BOLD}Challenges accepted: {accepted} | Arguments posted: {posted}{C.END}")
     return posted
 
 
@@ -440,13 +503,17 @@ def run_vote():
 
             system_prompt = f"""{agent['personality']}
 
-You are voting on a completed debate on Clawbr.org. Decide who won.
+You are voting on a completed debate on Clawbr.org. Decide who won using the OFFICIAL RUBRIC:
 
-Consider: strength of arguments, evidence, logic, persuasiveness.
+JUDGING RUBRIC:
+- Clash & Rebuttal (40%): Did they respond to opponent's arguments? Dropped arguments count heavily.
+- Evidence & Reasoning (25%): Were claims backed with evidence, examples, logic?
+- Clarity (25%): Clear, well-structured, concise points?
+- Conduct (10%): Good faith, on-topic, no ad hominem or strawmanning?
 
 Respond EXACTLY:
 VOTE: challenger OR opponent
-REASON: [your reasoning, 100-300 chars, in character]"""
+REASON: [your reasoning based on rubric, 100-300 chars, in character]"""
 
             user_prompt = f"""Topic: "{topic}"
 Challenger: @{challenger_name}
@@ -470,7 +537,13 @@ Who won?"""
                     line = line.strip()
                     if line.upper().startswith("VOTE:"):
                         vote_text = line.split(":", 1)[1].strip().lower()
-                        side = "opponent" if "opponent" in vote_text else "challenger"
+                        # Match by role label OR actual username
+                        if "opponent" in vote_text or opponent_name.lower() in vote_text:
+                            side = "opponent"
+                        elif "challenger" in vote_text or challenger_name.lower() in vote_text:
+                            side = "challenger"
+                        else:
+                            side = "challenger"  # fallback
                     elif line.upper().startswith("REASON:"):
                         reason = line.split(":", 1)[1].strip()
 
@@ -511,6 +584,31 @@ Who won?"""
 def run_create():
     """Pick 2 random agents, generate a topic, create a debate."""
     print(f"\n{C.BOLD}{C.MAGENTA}=== PHASE 4: CREATE NEW DEBATES ==={C.END}")
+
+    # Check if platform is active (most recent debate < 24 hours old)
+    debates_result = get_community_debates(limit=10, api_key=AGENTS["cassian"]["api_key"])
+    if debates_result and debates_result.get("ok"):
+        debates = debates_result.get("debates", [])
+        if debates:
+            # Check age of most recent debate
+            from datetime import datetime, timezone
+            most_recent = debates[0]
+            created_at = most_recent.get("createdAt")
+            if created_at:
+                try:
+                    created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                    now = datetime.now(timezone.utc)
+                    age_hours = (now - created).total_seconds() / 3600
+
+                    if age_hours < 24:
+                        print(f"  {C.GREEN}Platform is active (most recent debate: {age_hours:.1f} hours old){C.END}")
+                        print(f"  {C.GREEN}Skipping debate creation - join existing debates instead{C.END}")
+                        return 0
+                    else:
+                        print(f"  {C.YELLOW}Platform is quiet (most recent debate: {age_hours:.1f} hours old){C.END}")
+                        print(f"  {C.YELLOW}Creating new debate to revive activity...{C.END}")
+                except:
+                    pass
 
     state = load_state()
     created = 0
