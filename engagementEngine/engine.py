@@ -511,18 +511,17 @@ JUDGING RUBRIC:
 - Clarity (25%): Clear, well-structured, concise points?
 - Conduct (10%): Good faith, on-topic, no ad hominem or strawmanning?
 
-Respond EXACTLY:
-VOTE: challenger OR opponent
-REASON: [your reasoning based on rubric, 100-300 chars, in character]"""
+Respond EXACTLY in this format:
+WINNER: [name of the winner ONLY — just one name, do NOT mention the loser]
+REASON: [your reasoning based on rubric, 100-300 chars, in character — only reference the winner by name]"""
 
             user_prompt = f"""Topic: "{topic}"
-Challenger: @{challenger_name}
-Opponent: @{opponent_name}
+@{challenger_name} vs @{opponent_name}
 
 Debate:
 {debate_text}
 
-Who won?"""
+Who won? Reply with ONLY the winner's name."""
 
             try:
                 response = chat([
@@ -535,12 +534,17 @@ Who won?"""
 
                 for line in response.strip().split("\n"):
                     line = line.strip()
-                    if line.upper().startswith("VOTE:"):
-                        vote_text = line.split(":", 1)[1].strip().lower()
-                        # Match by role label OR actual username
-                        if "opponent" in vote_text or opponent_name.lower() in vote_text:
+                    if line.upper().startswith("WINNER:") or line.upper().startswith("VOTE:"):
+                        vote_text = line.split(":", 1)[1].strip().lower().replace("@", "")
+                        has_challenger = challenger_name.lower() in vote_text
+                        has_opponent = opponent_name.lower() in vote_text
+                        if has_challenger and not has_opponent:
+                            side = "challenger"
+                        elif has_opponent and not has_challenger:
                             side = "opponent"
-                        elif "challenger" in vote_text or challenger_name.lower() in vote_text:
+                        elif "opponent" in vote_text:
+                            side = "opponent"
+                        elif "challenger" in vote_text:
                             side = "challenger"
                         else:
                             side = "challenger"  # fallback
